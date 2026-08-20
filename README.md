@@ -34,6 +34,9 @@ cmake --build build/local --parallel
 ctest --test-dir build/local --output-on-failure
 ```
 
+When `SAFETY_CRIT_BUILD_TESTING=OFF`, the test framework helper is not loaded,
+so GoogleTest/Catch2 dependencies are not fetched during configure.
+
 Configure, build, and test with GoogleTest or Catch2:
 
 ```bash
@@ -46,6 +49,27 @@ cmake -S . -B build/catch2 -G Ninja \
 	-DSAFETY_CRIT_TEST_FRAMEWORK=Catch2
 cmake --build build/catch2 --parallel
 ctest --test-dir build/catch2 --output-on-failure
+```
+
+Configure in disconnected mode for pre-populated dependency builds:
+
+`FETCHCONTENT_FULLY_DISCONNECTED=ON` requires pre-populated FetchContent
+sources for the selected test framework (GoogleTest or Catch2).
+
+```bash
+cmake -S . -B build/gtest-offline -G Ninja \
+	-DSAFETY_CRIT_BUILD_TESTING=ON \
+	-DSAFETY_CRIT_TEST_FRAMEWORK=GoogleTest \
+	-DFETCHCONTENT_FULLY_DISCONNECTED=ON
+cmake --build build/gtest-offline --parallel
+ctest --test-dir build/gtest-offline --output-on-failure
+
+cmake -S . -B build/catch2-offline -G Ninja \
+	-DSAFETY_CRIT_BUILD_TESTING=ON \
+	-DSAFETY_CRIT_TEST_FRAMEWORK=Catch2 \
+	-DFETCHCONTENT_FULLY_DISCONNECTED=ON
+cmake --build build/catch2-offline --parallel
+ctest --test-dir build/catch2-offline --output-on-failure
 ```
 
 Build and smoke-test the container image:
