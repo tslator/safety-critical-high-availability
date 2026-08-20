@@ -121,11 +121,77 @@ check, status display, and teardown sequence:
 - Phase 0 smoke commands verify build and wiring only. They do not demonstrate
 	failover, shared-memory correctness, fault injection, or real-time guarantees.
 
-For diagnostics, inspect service logs and runtime capabilities with:
+## Runtime Diagnostics and Recovery
+
+Use the following commands when the image build, service health, or capability
+checks fail. Keep the outputs with the task evidence so later failures are
+attributable to the application or runtime policy rather than the initial
+container baseline.
+
+### 1. Docker build or image smoke failures
 
 ```bash
+docker build --pull --progress=plain --tag safety-critical-ha:phase0 .
+docker run --rm safety-critical-ha:phase0 --version
+docker image inspect safety-critical-ha:phase0 \
+	--format '{{json .Config.Entrypoint}}'
+```
+
+If the image build fails, capture the full build output and the package-manager
+error; if the runtime smoke fails, confirm the installed binary is the exact
+entry point and not a shell wrapper or host-dependent wrapper script.
+
+### 2. Compose startup or healthcheck failures
+
+```bash
+docker compose config --quiet
+docker compose build
+docker compose up --wait --no-build
+docker compose ps
+docker compose logs --tail=200
 docker compose logs <service>
-docker inspect <container>
-cat /proc/self/status
+```
+
+If a service never becomes healthy, inspect the container state and the service
+configuration before retrying:
+
+```bash
+docker inspect <container-name-or-id>
+docker inspect safety-critical-high-availability-worker-a-1
+```
+
+### 3. Missing capabilities or restricted runtime policy
+
+```bash
+cat /proc/self/status | egrep 'CapEff|CapPrm|Name|Cpus_allowed|Cpus_allowed_list'
 cat /sys/fs/cgroup/cgroup.controllers
 ```
+
+When `SYS_NICE` or `SYS_PTRACE` are not available, the repository's default
+stack remains intentionally non-privileged. A hosted CI runner may reject those
+features without failing the Phase 0 build itself; the supported host evidence
+from the prerequisite check should be retained for that case.
+
+### 4. Shared-memory, scheduler, and cgroup checks
+
+```bash
+df -h /dev/shm
+mount | grep shm
+cat /proc/self/mountinfo | grep shm
+cat /proc/self/status | egrep 'Cpus_allowed|Cpus_allowed_list|VmRSS|Name'
+```
+
+This confirms the runtime policy for shared memory size and the effective CPU
+allowlist without requiring a privileged container. The Compose stack config is
+required to set `shm_size` explicitly for each service that uses `/dev/shm`.
+
+### 5. Cleanup after a failed demo
+
+```bash
+docker compose down --volumes --remove-orphans
+docker ps -a
+docker volume ls
+```
+
+Use the same teardown sequence as the smoke script so failed runs do not leave
+containers or named volumes behind and hide the real problem.
