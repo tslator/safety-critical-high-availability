@@ -11,36 +11,48 @@ permissions:
 
 jobs:
   native-gtest:
+    name: Native CMake + GoogleTest
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@<sha>
-      - run: |
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Configure, build, and test
+        run: |
           cmake -S . -B build/gtest -G Ninja -DSAFETY_CRIT_TEST_FRAMEWORK=GoogleTest
           cmake --build build/gtest --parallel
           ctest --test-dir build/gtest --output-on-failure
 
   native-catch2:
+    name: Native CMake + Catch2
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@<sha>
-      - run: |
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Configure, build, and test
+        run: |
           cmake -S . -B build/catch2 -G Ninja -DSAFETY_CRIT_TEST_FRAMEWORK=Catch2
           cmake --build build/catch2 --parallel
           ctest --test-dir build/catch2 --output-on-failure
 
   docker-build:
+    name: Container image smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@<sha>
-      - run: |
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Build image and validate runtime binary
+        run: |
           docker build --pull --tag safety-critical-ha:phase0 .
           docker run --rm safety-critical-ha:phase0 --version
 
   docker-compose-smoke:
+    name: Compose runtime smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@<sha>
-      - run: |
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Validate stack startup and cleanup
+        run: |
           docker compose config --quiet
           docker compose up --wait --no-build
           docker compose ps
