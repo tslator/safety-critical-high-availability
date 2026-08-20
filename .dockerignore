@@ -1,0 +1,37 @@
+# Git metadata
+.git
+.gitignore
+
+# Host/local build artifacts
+build/
+cmake-build-*/
+**/CMakeFiles/
+**/CMakeCache.txt
+**/cmake_install.cmake
+**/install_manifest.txt
+
+# Test artifacts and outputs
+Testing/
+test-results/
+test-output/
+coverage/
+lcov.info
+*.gcda
+*.gcno
+*.gcov
+
+# Editor/IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local environment files
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# OS metadata
+.DS_Store
+Thumbs.db
