@@ -1,0 +1,132 @@
+services:
+  supervisor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: safety-critical-ha:phase0
+    labels:
+      safety-critical.role: supervisor
+    cpus: "0.5"
+    mem_limit: 512m
+    entrypoint: ["sleep", "infinity"]
+    cap_add:
+      - SYS_NICE
+      - SYS_PTRACE
+    shm_size: 64m
+    restart: unless-stopped
+    networks: [safety-ha]
+    healthcheck:
+      test: ["CMD", "safety-critical-ha", "--version"]
+      interval: 30s
+      timeout: 5s
+      retries: 2
+
+
+  monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: safety-critical-ha:phase0
+    labels:
+      safety-critical.role: monitor
+    cpus: "0.25"
+    mem_limit: 256m
+    entrypoint: ["sleep", "infinity"]
+    shm_size: 64m
+    restart: unless-stopped
+    networks: [safety-ha]
+    healthcheck:
+      test: ["CMD", "safety-critical-ha", "--version"]
+      interval: 30s
+      timeout: 5s
+      retries: 2
+
+  worker-a:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: safety-critical-ha:phase0
+    labels:
+      safety-critical.role: worker-a
+    cpus: "0.5"
+    mem_limit: 512m
+    entrypoint: ["sleep", "infinity"]
+    cap_add:
+      - SYS_NICE
+      - SYS_PTRACE
+    shm_size: 64m
+    restart: unless-stopped
+    networks: [safety-ha]
+    healthcheck:
+      test: ["CMD", "safety-critical-ha", "--version"]
+      interval: 30s
+      timeout: 5s
+      retries: 2
+
+  worker-b:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: safety-critical-ha:phase0
+    labels:
+      safety-critical.role: worker-b
+    cpus: "0.5"
+    mem_limit: 512m
+    entrypoint: ["sleep", "infinity"]
+
+    cap_add:
+      - SYS_NICE
+      - SYS_PTRACE
+    shm_size: 64m
+    restart: unless-stopped
+    networks: [safety-ha]
+    healthcheck:
+      test: ["CMD", "safety-critical-ha", "--version"]
+      interval: 30s
+      timeout: 5s
+      retries: 2
+
+  worker-c:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: safety-critical-ha:phase0
+    labels:
+      safety-critical.role: worker-c
+    cpus: "0.5"
+    mem_limit: 512m
+    entrypoint: ["sleep", "infinity"]
+    cap_add:
+      - SYS_NICE
+      - SYS_PTRACE
+    shm_size: 64m
+    restart: unless-stopped
+    networks: [safety-ha]
+    healthcheck:
+      test: ["CMD", "safety-critical-ha", "--version"]
+      interval: 30s
+      timeout: 5s
+      retries: 2
+
+  perturb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["perturb"]
+    image: safety-critical-ha:phase0
+    labels:
+      safety-critical.role: perturb
+    cpus: "0.5"
+    mem_limit: 512m
+    entrypoint: ["sleep", "infinity"]
+    cap_add:
+      - SYS_NICE
+      - SYS_PTRACE
+    restart: "no"
+    shm_size: 64m
+    networks: [safety-ha]
+
+
+networks:
+  safety-ha:
+    driver: bridge
