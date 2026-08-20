@@ -1,5 +1,5 @@
-#include <gtest/gtest.h>
+#include "test_framework.hpp"
 
-TEST(Smoke, AlwaysPasses) {
-    EXPECT_TRUE(true);
+SAFETY_CRIT_TEST_CASE(AlwaysPasses) {
+    SAFETY_CRIT_ASSERT(true);
 }

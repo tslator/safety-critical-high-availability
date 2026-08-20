@@ -1,0 +1,15 @@
+#pragma once
+
+#if defined(SAFETY_CRIT_USE_GTEST)
+#include <gtest/gtest.h>
+#define SAFETY_CRIT_TEST_CASE(name) TEST(Smoke, name)
+#define SAFETY_CRIT_ASSERT(expr) EXPECT_TRUE(expr)
+
+#elif defined(SAFETY_CRIT_USE_CATCH2)
+#include <catch2/catch_test_macros.hpp>
+#define SAFETY_CRIT_TEST_CASE(name) TEST_CASE("Smoke " #name)
+#define SAFETY_CRIT_ASSERT(expr) REQUIRE(expr)
+
+#else
+#error "No test framework selected."
+#endif
