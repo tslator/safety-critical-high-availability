@@ -54,6 +54,7 @@ jobs:
       - name: Validate stack startup and cleanup
         run: |
           docker compose config --quiet
+          docker compose build
           docker compose up --wait --no-build
           docker compose ps
           docker compose exec supervisor safety-critical-ha --version
