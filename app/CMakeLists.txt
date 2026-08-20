@@ -12,3 +12,5 @@ target_compile_definitions(safety-critical-ha
 install(TARGETS safety-critical-ha
     RUNTIME DESTINATION bin
 )
+
+safety_crit_apply_sanitizers(safety-critical-ha)
