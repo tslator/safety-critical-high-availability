@@ -64,8 +64,8 @@ The repository contains this initial layout after all tasks complete:
 
 The project uses `SAFETY_CRIT_TEST_FRAMEWORK` consistently. Valid values are
 `GoogleTest` (the default) and `Catch2`. This spelling is deliberate: the
-source plan uses both `SAFETY_CRIT_TEST_FRAMEWORK` and `SAFCRIT_TEST_FRAMEWORK`;
-the former is the Phase 0 contract.
+source plan previously used a shortened spelling; the canonical name is the
+Phase 0 contract.
 
 ## Prerequisites
 
@@ -120,6 +120,36 @@ repeatable options in Task 0.3:
 2. A pinned LLVM or GCC toolchain repository/image with package-version pins.
 3. A pinned compiler base image used only by the builder stage, with a Debian
    bookworm-slim runtime stage.
+
+#### Tradeoffs
+
+| Option | Pros | Cons |
+|---|---|---|
+| Debian bookworm with its supported default `g++` | Simplest Dockerfile and package maintenance; uses packages supported by the Debian release; usually has good compatibility with the Debian runtime; avoids adding another toolchain vendor or repository. | Compiler versions may lag behind upstream; newer diagnostics, standard-library fixes, or tooling may not be available; the exact compiler package can change if the base image or APT metadata is not pinned; native builds can differ from container builds unless the host uses the same compiler. |
+| Pinned LLVM or GCC repository/image | Provides a deliberately selected compiler version and access to newer C++20 support, diagnostics, sanitizers, and analysis tools; can align native and container builds around an explicit version. | Requires trusted repository configuration, signing-key and package pin maintenance, and a plan for repository availability; increases build complexity and supply-chain surface; newer compiler and standard-library combinations can expose portability or ABI differences; updates must be tested rather than adopted implicitly. |
+| Pinned compiler base image for the builder | Gives the strongest build reproducibility when the image is pinned by digest; isolates compiler packages from the runtime image; makes it straightforward to keep a known compiler/CMake/Ninja combination in CI; the small Debian runtime remains independent of builder tooling. | Requires maintaining a separate builder image and digest updates; image pulls can be larger or unavailable in restricted/offline environments; the builder's libc, linker, or standard library may not match the runtime unless the compatibility boundary is checked; debugging failures across the builder/runtime boundary requires more container knowledge. |
+
+#### Selection Guidance
+
+Use option 1 when the Debian-supported compiler passes the C++20 feature probe
+and Phase 0 does not need a newer compiler-specific diagnostic or sanitizer.
+This is the preferred starting point because it minimizes moving parts while
+remaining compatible with the `debian:bookworm-slim` runtime.
+
+Use option 2 when the project has a concrete requirement for a newer GCC or
+LLVM release. Record the repository, signing-key policy, package names, and
+exact versions; do not treat an unversioned `apt install` from a third-party
+repository as reproducible.
+
+Use option 3 when compiler identity and byte-for-byte build repeatability are
+more important than the smallest setup. Pin the builder image by digest,
+record the compiler and linker versions, and verify that the resulting binary
+only depends on libraries available in the Debian runtime stage.
+
+For any option, validate the selected compiler during CMake configuration and
+run the same native and container C++20 smoke tests. Do not select a toolchain
+merely because it provides C++23 features: Phase 0 production code remains
+C++20-only.
 
 The project standard is C++20. C++23 features, including `std::expected`, are
 not permitted in Phase 0 production code unless a compatibility layer is added

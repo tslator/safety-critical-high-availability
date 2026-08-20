@@ -549,9 +549,9 @@ To support both GoogleTest and Catch2 with a unified test interface:
 
 **`CMake/TestFramework.cmake`:**
 ```cmake
-option(SAFECRIT_TEST_FRAMEWORK "Test framework: GoogleTest or Catch2" "GoogleTest")
+option(SAFETY_CRIT_TEST_FRAMEWORK "Test framework: GoogleTest or Catch2" "GoogleTest")
 
-if(SAFECRIT_TEST_FRAMEWORK STREQUAL "GoogleTest")
+if(SAFETY_CRIT_TEST_FRAMEWORK STREQUAL "GoogleTest")
     find_package(GTest REQUIRED)
     add_library(TestFramework INTERFACE)
     target_link_libraries(TestFramework INTERFACE GTest::gtest GTest::gtest_main)
@@ -565,7 +565,7 @@ if(SAFECRIT_TEST_FRAMEWORK STREQUAL "GoogleTest")
         TEST_ASSERT_NEAR(a,b,e) = EXPECT_NEAR(a,b,e)
 endif()
 
-if(SAFECRIT_TEST_FRAMEWORK STREQUAL "Catch2")
+if(SAFETY_CRIT_TEST_FRAMEWORK STREQUAL "Catch2")
     find_package(Catch2 REQUIRED)
     add_library(TestFramework INTERFACE)
     target_link_libraries(TestFramework INTERFACE Catch2::Catch2WithMain)
@@ -627,10 +627,10 @@ TEST(RingBufferLockFree, NoDataLoss) {
 **Switching frameworks:**
 ```bash
 # GoogleTest (default)
-cmake -B build -DSAFCRIT_TEST_FRAMEWORK=GoogleTest
+cmake -B build -DSAFETY_CRIT_TEST_FRAMEWORK=GoogleTest
 
 # Catch2
-cmake -B build -DSAFCRIT_TEST_FRAMEWORK=Catch2
+cmake -B build -DSAFETY_CRIT_TEST_FRAMEWORK=Catch2
 
 # Run tests (works the same either way)
 cd build && ctest --output-on-failure
@@ -655,7 +655,7 @@ COPY . .
 RUN mkdir build && cd build && \
     cmake .. \
         -DCMAKE_BUILD_TYPE=Release \
-        -DSAFCRIT_TEST_FRAMEWORK=GoogleTest \
+        -DSAFETY_CRIT_TEST_FRAMEWORK=GoogleTest \
         -DCMAKE_CXX_FLAGS="-O3 -DNDEBUG" && \
     make -j$(nproc) && \
     ctest --output-on-failure
