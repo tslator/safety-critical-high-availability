@@ -8,3 +8,7 @@ target_compile_definitions(safety-critical-ha
     PRIVATE
     SAFETY_CRIT_COMPILER_NAME="${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}"
 )
+
+install(TARGETS safety-critical-ha
+    RUNTIME DESTINATION bin
+)

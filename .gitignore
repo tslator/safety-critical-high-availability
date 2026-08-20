@@ -33,3 +33,6 @@ lcov.info
 # OS metadata
 .DS_Store
 Thumbs.db
+
+# Docker build output
+build.log
