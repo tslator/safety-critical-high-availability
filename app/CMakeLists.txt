@@ -13,4 +13,5 @@ install(TARGETS safety-critical-ha
     RUNTIME DESTINATION bin
 )
 
+safety_crit_apply_warnings(safety-critical-ha)
 safety_crit_apply_sanitizers(safety-critical-ha)

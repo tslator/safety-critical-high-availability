@@ -2,6 +2,10 @@
 # CMakeLists.txt and from tests/CMakeLists.txt.
 include_guard(GLOBAL)
 
+# Directory containing this module. Captured here (at include scope) because
+# CMAKE_CURRENT_LIST_DIR inside a function refers to the caller's directory.
+set(SAFETY_CRIT_CMAKE_DIR "${CMAKE_CURRENT_LIST_DIR}")
+
 if(NOT SAFETY_CRIT_TEST_FRAMEWORK STREQUAL "GoogleTest"
    AND NOT SAFETY_CRIT_TEST_FRAMEWORK STREQUAL "Catch2")
     message(FATAL_ERROR 
@@ -57,7 +61,32 @@ elseif(SAFETY_CRIT_TEST_FRAMEWORK STREQUAL "Catch2")
     list(APPEND CMAKE_MODULE_PATH "${catch2_SOURCE_DIR}/extras")
 endif()
 
+# Generate the framework-agnostic test adapter header (tests/test_framework.hpp.in)
+# into output_dir. Test targets add that directory to their include path and
+# then #include "test_framework.hpp" for SAFETY_CRIT_TEST_CASE/SAFETY_CRIT_ASSERT.
+function(safety_crit_configure_test_adapter output_dir)
+    configure_file(
+        "${SAFETY_CRIT_CMAKE_DIR}/../tests/test_framework.hpp.in"
+        "${output_dir}/test_framework.hpp"
+        COPY_ONLY)
+endfunction()
+
+# Prepare a unit-test executable for the selected framework: generates the
+# adapter header into the caller's binary dir and adds the include path plus
+# the framework selection macro. Called by safety_crit_register_tests.
+function(safety_crit_prepare_test target_name)
+    safety_crit_configure_test_adapter(${CMAKE_CURRENT_BINARY_DIR})
+    if(SAFETY_CRIT_TEST_FRAMEWORK STREQUAL "GoogleTest")
+        target_compile_definitions(${target_name} PRIVATE SAFETY_CRIT_USE_GTEST)
+    else()
+        target_compile_definitions(${target_name} PRIVATE SAFETY_CRIT_USE_CATCH2)
+    endif()
+    target_include_directories(${target_name} PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+endfunction()
+
 function(safety_crit_register_tests target_name)
+    safety_crit_prepare_test(${target_name})
+
     if(SAFETY_CRIT_TEST_FRAMEWORK STREQUAL "GoogleTest")
         target_link_libraries(${target_name} PRIVATE GTest::gtest_main)
         include(GoogleTest)

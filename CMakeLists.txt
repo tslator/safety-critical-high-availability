@@ -16,14 +16,17 @@ option(SAFETY_CRIT_ENABLE_TSAN "Enable ThreadSanitizer" OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMake")
 include(Sanitizers)
+include(Warnings)
 
+# enable_testing() must precede every add_subdirectory() that registers tests.
 if(SAFETY_CRIT_BUILD_TESTING)
     include(TestFramework)
+    enable_testing()
 endif()
 
+add_subdirectory(shared-memory)
 add_subdirectory(app)
 
 if(SAFETY_CRIT_BUILD_TESTING)
-    enable_testing()
     add_subdirectory(tests)
 endif()
