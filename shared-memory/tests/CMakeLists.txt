@@ -1,0 +1,12 @@
+# Phase 1, T1.1: shared-memory unit tests.
+add_executable(atomic_flags_test atomic_flags_test.cpp)
+target_link_libraries(atomic_flags_test PRIVATE safety_crit::shared_memory)
+safety_crit_apply_warnings(atomic_flags_test)
+safety_crit_apply_sanitizers(atomic_flags_test)
+safety_crit_register_tests(atomic_flags_test)
+
+add_executable(shared_region_layout_test shared_region_layout_test.cpp)
+target_link_libraries(shared_region_layout_test PRIVATE safety_crit::shared_memory)
+safety_crit_apply_warnings(shared_region_layout_test)
+safety_crit_apply_sanitizers(shared_region_layout_test)
+safety_crit_register_tests(shared_region_layout_test)
