@@ -1,4 +1,4 @@
-name: Phase 0 CI
+name: CI
 
 on:
   push:
@@ -33,6 +33,48 @@ jobs:
           cmake -S . -B build/catch2 -G Ninja -DSAFETY_CRIT_TEST_FRAMEWORK=Catch2
           cmake --build build/catch2 --parallel
           ctest --test-dir build/catch2 --output-on-failure
+
+  # Sanitizer coverage for first-party and test code. ASan+UBSan run together;
+  # TSan is a separate combination (it cannot be combined with either).
+  sanitizers:
+    name: Sanitizers (${{ matrix.sanitize }}, ${{ matrix.framework }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitize: ["ASan+UBSan", "TSan"]
+        framework: [GoogleTest, Catch2]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Configure, build, and test under ${{ matrix.sanitize }}
+        shell: bash
+        run: |
+          case "${{ matrix.sanitize }}" in
+            ASan+UBSan)
+              export ASAN_OPTIONS=detect_leaks=1
+              export UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
+              sanitizer_flags="-DSAFETY_CRIT_ENABLE_ASAN=ON -DSAFETY_CRIT_ENABLE_UBSAN=ON"
+              ;;
+            TSan)
+              export TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1
+              sanitizer_flags="-DSAFETY_CRIT_ENABLE_TSAN=ON"
+              # TSan's fixed shadow-memory reservation collides with ASLR on
+              # some hosts (FATAL: unexpected memory mapping at init, even for
+              # trivial programs). Disabling ASLR for the whole toolchain is
+              # inherited by test binaries run during discovery and by ctest.
+              set -- setarch $(uname -m) --addr-no-randomize
+              ;;
+            *)
+              echo "unknown sanitizer combination: ${{ matrix.sanitize }}" >&2
+              exit 1
+              ;;
+          esac
+          ${@} cmake -S . -B build/${{ matrix.framework }} -G Ninja \
+            -DSAFETY_CRIT_TEST_FRAMEWORK=${{ matrix.framework }} \
+            ${sanitizer_flags}
+          ${@} cmake --build build/${{ matrix.framework }} --parallel
+          ${@} ctest --test-dir build/${{ matrix.framework }} --output-on-failure
 
   docker-build:
     name: Container image smoke

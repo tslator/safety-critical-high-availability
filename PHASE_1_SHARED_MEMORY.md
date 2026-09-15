@@ -62,6 +62,12 @@ CTest coverage; they must not replace the Phase 0 smoke test.
    0.2 step 4 requires `-Wall -Wextra -Wpedantic -Wconversion -Wshadow` on
    project-owned targets; the helper exists now and is applied to all
    first-party targets (including `app`, closing that Phase 0 gap).
+5. **Sanitizer CI moved ahead of T1.2.** The original plan gates sanitizer
+   runs near phase exit. Since the lock-free buffer is the first genuinely
+   concurrency-sensitive code, a hosted matrix of {ASan+UBSan, TSan} x
+   {GoogleTest, Catch2} was added to `ci.yml` at Phase 1 start so every
+   commit from T1.2 onward is sanitizer-gated (TSan combinations run the
+   toolchain under `setarch --addr-no-randomize`; see NOTES.md for why).
 
 ## Target Outcome
 

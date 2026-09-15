@@ -138,3 +138,15 @@ Date: 2026-09-15
 |Tests-off path: `-DSAFETY_CRIT_BUILD_TESTING=OFF`|PASS - app builds and `--version` exits zero; CTest reports zero tests (expected).|
 
 Notes: `safety_crit_register_tests` now centralizes adapter-header generation + framework selection macro + include path (previously duplicated per module); test adapter macro generalized to `SAFETY_CRIT_TEST_CASE(suite, name)`. `CMake/Warnings.cmake` materializes the Phase 0 Task 0.2 warning policy for first-party targets. `enable_testing()` moved ahead of `add_subdirectory(shared-memory)` so that subtree's tests register (was silently dropped).
+
+Gate: CI Sanitizer Matrix (added at Phase 1 start, ahead of T1.2)
+Date: 2026-09-15
+|Command / Check|Result|
+|---|---|
+|`.github/workflows/ci.yml`: new `sanitizers` job, matrix {ASan+UBSan, TSan} x {GoogleTest, Catch2}, fail-fast off. ASAN_OPTIONS=detect_leaks=1, UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1, TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1|PASS (local verification below; hosted run pending push)|
+|Local ASan+UBSan + GoogleTest (fresh dir)|PASS - 8/8 tests, no diagnostics|
+|Local ASan+UBSan + Catch2 (fresh dir)|PASS - 8/8 tests, no diagnostics|
+|Local TSan + GoogleTest (fresh dir)|PASS - 8/8 tests, no diagnostics (under `setarch $(uname -m) --addr-no-randomize`)|
+|Local TSan + Catch2 (fresh dir)|PASS - 8/8 tests, no diagnostics (under `setarch $(uname -m) --addr-no-randomize`)|
+
+Notes: TSan's fixed shadow-memory reservation collides with ASLR in this dev sandbox - even `g++ -fsanitize=thread` on `int main(){return 0;}` fails with `FATAL: ThreadSanitizer: unexpected memory mapping` (exit 66). Running the toolchain under `setarch --addr-no-randomize` resolves it, so the CI step does exactly that for the TSan combinations (personality is inherited by discovery and ctest children); no effect on the ASan+UBSan jobs. Workflow renamed "Phase 0 CI" -> "CI".
