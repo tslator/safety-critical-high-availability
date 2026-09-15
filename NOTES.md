@@ -88,3 +88,40 @@ Total Test time (real) =   0.00 sec`|
 
 ---
 
+
+---
+
+Gate: G0.4 (supplement - offline FetchContent support)
+Date: 2026-09-15
+|Command|Result|
+|---|---|
+|`cmake -S . -B /tmp/repro-offline -G Ninja -DSAFETY_CRIT_TEST_FRAMEWORK=GoogleTest -DFETCHCONTENT_FULLY_DISCONNECTED=ON` (fresh, unpopulated dir)|PASS - configure now fails fast with: "GoogleTest was not made available: target 'GTest::gtest_main' does not exist... sources must already be populated in '/tmp/repro-offline/_deps/googletest-src'". Same fail-fast verified for Catch2 ('Catch2::Catch2WithMain', '_deps/catch2-src'). Previously this combination silently skipped the dependency and failed later at generate time with a misleading "target not found" error.|
+|`cmake -S . -B build/gtest-offline -G Ninja -DSAFETY_CRIT_BUILD_TESTING=ON -DSAFETY_CRIT_TEST_FRAMEWORK=GoogleTest -DFETCHCONTENT_FULLY_DISCONNECTED=ON` (after pre-populating `build/gtest-offline/_deps/googletest-src`) + `cmake --build build/gtest-offline --parallel` + `ctest --test-dir build/gtest-offline --output-on-failure`|PASS - 12/12 targets built offline, 100% tests passed (1/1 Smoke.AlwaysPasses)|
+|`cmake -S . -B build/catch2 -G Ninja -DSAFETY_CRIT_TEST_FRAMEWORK=Catch2 -DFETCHCONTENT_FULLY_DISCONNECTED=ON` + ctest (pre-populated dir)|PASS - configure offline, 100% tests passed|
+
+---
+
+Gate: G0.5
+Date: 2026-09-15
+Host: x86_64 Linux, Docker Engine 29.6.2, cgroups v2 (`/sys/fs/cgroup/cgroup.controllers` present)
+|Command|Result|
+|---|---|
+|`docker compose config --quiet`|PASS (exit 0)|
+|`docker compose build`|PASS - image safety-critical-ha:phase0 built; builder stage ran CMake + Ninja + CTest (1/1 smoke test passed in-image, GNU 12.2.0)|
+|`docker compose up --wait --no-build`|PASS - all default services healthy: supervisor, monitor, worker-a, worker-b, worker-c (each "Up ... (healthy)"). `perturb` absent from default stack (profile-gated).|
+|`docker compose ps`|PASS - 5/5 services listed, all healthy|
+|`docker compose exec supervisor safety-critical-ha --version`|PASS - "safety-critical-ha version 0.1.0 / Compiler: GNU 12.2.0"|
+|worker-a runtime inspection (`docker inspect` + in-container `df /dev/shm`) |PASS - CapAdd [CAP_SYS_NICE CAP_SYS_PTRACE]; Memory 536870912 (512 MiB); NanoCpus 500000000 (0.5 CPU); ShmSize 67108864; /dev/shm mounted at 64M|
+|`docker compose down --volumes --remove-orphans`|PASS - containers, network, and volumes removed; no project resources remain|
+
+---
+
+Gate: G0.6
+Date: 2026-09-15
+|Command|Result|
+|---|---|
+|`shellcheck run_demo.sh` (via `docker run --rm -v $PWD/run_demo.sh:/f:ro koalaman/shellcheck /f`; shellcheck not host-installable without root)|PASS - no findings|
+|`bash -n run_demo.sh`|PASS|
+|`./run_demo.sh`|PASS - exit 0 from a clean Docker state; validated compose config, built stack, started default services, showed status, ran version check, and tore down via trap (0 containers remaining after run)|
+|`git diff --check`|PASS - no whitespace errors|
+|Hosted CI (.github/workflows/ci.yml: native-gtest, native-catch2, docker-build, docker-compose-smoke)|PENDING - workflow committed; result must be observed on the hosted runner after push. Remote: origin (github.com/tslator/safety-critical-high-availability)|
