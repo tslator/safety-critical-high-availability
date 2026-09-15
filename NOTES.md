@@ -143,7 +143,7 @@ Gate: CI Sanitizer Matrix (added at Phase 1 start, ahead of T1.2)
 Date: 2026-09-15
 |Command / Check|Result|
 |---|---|
-|`.github/workflows/ci.yml`: new `sanitizers` job, matrix {ASan+UBSan, TSan} x {GoogleTest, Catch2}, fail-fast off. ASAN_OPTIONS=detect_leaks=1, UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1, TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1|PASS (local verification below; hosted run pending push)|
+|`.github/workflows/ci.yml`: new `sanitizers` job, matrix {ASan+UBSan, TSan} x {GoogleTest, Catch2}, fail-fast off. ASAN_OPTIONS=detect_leaks=1, UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1, TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1|PASS - local matrix green; hosted run 35037234276 on commit 545ad5a: all four sanitizer jobs plus native and docker jobs succeeded (8/8 jobs)|
 |Local ASan+UBSan + GoogleTest (fresh dir)|PASS - 8/8 tests, no diagnostics|
 |Local ASan+UBSan + Catch2 (fresh dir)|PASS - 8/8 tests, no diagnostics|
 |Local TSan + GoogleTest (fresh dir)|PASS - 8/8 tests, no diagnostics (under `setarch $(uname -m) --addr-no-randomize`)|
