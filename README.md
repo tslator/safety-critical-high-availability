@@ -54,7 +54,23 @@ ctest --test-dir build/catch2 --output-on-failure
 Configure in disconnected mode for pre-populated dependency builds:
 
 `FETCHCONTENT_FULLY_DISCONNECTED=ON` requires pre-populated FetchContent
-sources for the selected test framework (GoogleTest or Catch2).
+sources for the selected test framework (GoogleTest or Catch2). The offline
+build directory must already contain them under its `_deps` directory, and a
+clean build directory does not. Pre-populate it with one normal (online)
+configure in the same build directory first:
+
+```bash
+cmake -S . -B build/gtest-offline -G Ninja \
+	-DSAFETY_CRIT_BUILD_TESTING=ON \
+	-DSAFETY_CRIT_TEST_FRAMEWORK=GoogleTest
+```
+
+then run the offline configure below. Alternatively, for a fresh build
+directory, copy `_deps/googletest-src` (or `_deps/catch2-src`) from an
+existing populated build directory into it before configuring with
+`FETCHCONTENT_FULLY_DISCONNECTED=ON`. If the sources are missing in
+disconnected mode, configure fails immediately with an error pointing at the
+expected source directory.
 
 ```bash
 cmake -S . -B build/gtest-offline -G Ninja \

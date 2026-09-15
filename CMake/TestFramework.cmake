@@ -1,3 +1,7 @@
+# Guard against re-inclusion: this module is included both from the top-level
+# CMakeLists.txt and from tests/CMakeLists.txt.
+include_guard(GLOBAL)
+
 if(NOT SAFETY_CRIT_TEST_FRAMEWORK STREQUAL "GoogleTest"
    AND NOT SAFETY_CRIT_TEST_FRAMEWORK STREQUAL "Catch2")
     message(FATAL_ERROR 
@@ -21,6 +25,15 @@ if(SAFETY_CRIT_TEST_FRAMEWORK STREQUAL "GoogleTest")
         URL_HASH SHA256=6e3191c1455468b3fc35a417fb565c1c5071aee1b7e7f85e30cf48a98d37d8b5
     )
     FetchContent_MakeAvailable(googletest)
+    if(NOT TARGET GTest::gtest_main)
+        message(FATAL_ERROR
+            "GoogleTest was not made available: target 'GTest::gtest_main' does not exist. "
+            "With FETCHCONTENT_FULLY_DISCONNECTED=ON, FetchContent assumes the sources are "
+            "already populated in '${googletest_SOURCE_DIR}' and silently skips them when that "
+            "directory is missing. Run one normal (online) configure in this build directory "
+            "first, or copy 'googletest-src' from an existing populated build's '_deps' "
+            "directory, then re-run with -DFETCHCONTENT_FULLY_DISCONNECTED=ON.")
+    endif()
 
 elseif(SAFETY_CRIT_TEST_FRAMEWORK STREQUAL "Catch2")
     FetchContent_Declare(
@@ -29,6 +42,16 @@ elseif(SAFETY_CRIT_TEST_FRAMEWORK STREQUAL "Catch2")
         URL_HASH SHA256=b0299ae552918220a7a6e21e7de5b714777f4e8c883fb70c4bb23fe01df8c6e3
     )
     FetchContent_MakeAvailable(catch2)
+
+    if(NOT TARGET Catch2::Catch2WithMain)
+        message(FATAL_ERROR
+            "Catch2 was not made available: target 'Catch2::Catch2WithMain' does not exist. "
+            "With FETCHCONTENT_FULLY_DISCONNECTED=ON, FetchContent assumes the sources are "
+            "already populated in '${catch2_SOURCE_DIR}' and silently skips them when that "
+            "directory is missing. Run one normal (online) configure in this build directory "
+            "first, or copy 'catch2-src' from an existing populated build's '_deps' "
+            "directory, then re-run with -DFETCHCONTENT_FULLY_DISCONNECTED=ON.")
+    endif()
 
     # catch_discover_tests is provided by Catch.cmake in the extras directory.
     list(APPEND CMAKE_MODULE_PATH "${catch2_SOURCE_DIR}/extras")
