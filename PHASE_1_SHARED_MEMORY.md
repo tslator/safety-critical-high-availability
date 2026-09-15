@@ -1,0 +1,309 @@
+# Phase 1 - Shared Memory & Lock-Free Ring Buffers
+
+## Purpose
+
+Implement the `safety_crit::shared_memory` library: the `/dev/shm` region
+layout, per-worker atomic status flags, and the lock-free ring buffer with
+per-slot integrity checks. At the end of this phase, multiple processes can
+attach to one shared region, exchange fixed-size messages through ring
+buffers without locks, detect corrupted slots, and verify layout invariants —
+the substrate every later phase (workers, monitor, supervisor, perturbation)
+builds on.
+
+This document decomposes Phase 1 from `SAFETY_CRITICAL_HA_PLAN.md` into tasks
+intended to take one developer three to four hours each. Complete tasks in
+order; each verification gate is a required input to the next task.
+
+## Scope and Non-Goals
+
+**In scope**
+
+- `shared-memory/` CMake target (library `safety_crit::shared_memory`).
+- `SharedRegion` layout with cache-line discipline and identity word.
+- Bit-packed atomic worker status flags.
+- Lock-free MPMC ring buffer with per-slot CRC integrity.
+- `/dev/shm` mmap attach/detach wrapper with re-attachment support.
+- Unit and stress tests under both test frameworks, plus sanitizer runs.
+
+**Out of scope**
+
+- Worker processes, supervisor/monitor logic, HTTP endpoints, failover, and
+  fault injection (Phases 2-5).
+- Real-time scheduling (`SCHED_FIFO`) — Phase 4 concern; this phase only
+  needs ordinary process scheduling.
+- Hard real-time or zero-jitter claims.
+
+## Handoff Contract From Phase 0
+
+Phase 1 must preserve: the C++20 standard, warning policy, sanitizer options,
+framework selection (`SAFETY_CRIT_TEST_FRAMEWORK`), the container image and
+its in-image CTest gate, and CI jobs. New shared-memory tests are additional
+CTest coverage; they must not replace the Phase 0 smoke test.
+
+## Deviations From the Plan Sketch (recorded decisions)
+
+1. **The plan's `LockFreeRingBuffer` sketch is not implementable as written.**
+   Its `try_push`/`try_pop` CAS logic does not define correct multi-producer
+   ownership of `head_` (producers can claim the same slot), and its
+   `is_lock_free()` uses `std::is_constant_evaluated()` invalidly. T1.2
+   implements a per-slot sequence protocol (the moodycamel/boost::lockfree
+   pattern named in plan §8) instead, keeping the plan's public interface
+   shape (`try_push`/`try_pop`, power-of-2 `requires` clause, runtime
+   lock-free verification).
+2. **No false sharing via real padding, not the sketch's `char padding[]`.**
+   The plan comment asks that no two workers share a cache line; its
+   implementation (a single pad array at the end) does not achieve that for
+   `worker_status`. T1.1 wraps each worker's status in an `alignas(64)`
+   cell and verifies distinct lines with compile-time + runtime checks.
+3. **Test adapter generalized.** `SAFETY_CRIT_TEST_CASE` now takes
+   `(suite, name)` so every test module gets its own suite under both
+   frameworks. The Phase 0 smoke test is updated to the same form.
+4. **Warning policy materialized as `CMake/Warnings.cmake`.** Phase 0 Task
+   0.2 step 4 requires `-Wall -Wextra -Wpedantic -Wconversion -Wshadow` on
+   project-owned targets; the helper exists now and is applied to all
+   first-party targets (including `app`, closing that Phase 0 gap).
+
+## Target Outcome
+
+```text
+├── CMake/
+│   ├── Sanitizers.cmake
+│   ├── TestFramework.cmake
+│   └── Warnings.cmake                     # new
+├── shared-memory/                         # new
+│   ├── CMakeLists.txt
+│   ├── include/safety_crit/shared_memory/
+│   │   ├── atomic_flags.hpp
+│   │   ├── ring_buffer.hpp
+│   │   ├── shared_region.hpp
+│   │   └── integrity.hpp
+│   ├── src/
+│   │   ├── ring_buffer.cpp
+│   │   ├── integrity.cpp
+│   │   └── shared_region.cpp
+│   └── tests/
+│       ├── CMakeLists.txt
+│       ├── atomic_flags_test.cpp
+│       ├── shared_region_layout_test.cpp
+│       ├── ring_buffer_stress.cpp         # T1.5
+│       └── shm_attach_test.cpp            # T1.4
+└── tests/                                 # Phase 0 smoke test (unchanged API)
+```
+
+## Task Plan
+
+### Task T1.1 - Shared Region Layout and Atomic Flags _(3-4 h)_
+
+**Dependencies:** Phase 0 exit gate.
+
+**Implementation steps**
+
+1. Add `CMake/Warnings.cmake` with `safety_crit_apply_warnings(target)` and a
+   `SAFETY_CRIT_WARNINGS_AS_ERRORS` option (default OFF); apply to all
+   first-party targets.
+2. Generalize the test adapter macro to
+   `SAFETY_CRIT_TEST_CASE(suite, name)`; add
+   `safety_crit_configure_test_adapter(dir)` to `CMake/TestFramework.cmake`.
+3. Create `shared-memory/` as a static library target
+   `safety_crit::shared_memory` (C++20, warnings, sanitizers) built in all
+   configurations; tests gated on `SAFETY_CRIT_BUILD_TESTING`.
+4. Implement `atomic_flags.hpp`: `WorkerStatusFlag` bits
+   (`RUNNING`, `IDLE`, `CRASHED`, `RECOVERING`), non-atomic inspection/combine
+   helpers, and atomic set/clear/load helpers using single-word RMW only.
+5. Implement `shared_region.hpp` / `shared_region.cpp`: `SharedRegion` with
+   identity word (magic + version), one 64-byte `RingBufferHeader` per worker,
+   one 64-byte `WorkerStatusCell` per worker, `global_seq`, and
+   `integrity_word`; `initialize(region)` for freshly mapped memory and
+   `verify(region)` for attachment safety; compile-time layout invariants.
+
+**Deliverables**
+
+- `safety_crit::shared_memory` target with flags + region layout.
+- Test executables `atomic_flags_test`, `shared_region_layout_test`.
+
+**Verification gate G1.1**
+
+```bash
+cmake -S . -B build/gtest -G Ninja -DSAFETY_CRIT_TEST_FRAMEWORK=GoogleTest
+cmake --build build/gtest --parallel
+ctest --test-dir build/gtest --output-on-failure
+
+cmake -S . -B build/catch2 -G Ninja -DSAFETY_CRIT_TEST_FRAMEWORK=Catch2
+cmake --build build/catch2 --parallel
+ctest --test-dir build/catch2 --output-on-failure
+```
+
+Pass when both frameworks discover and pass the flag and layout tests (and
+the Phase 0 smoke test still passes), including compile-time alignment
+invariants.
+
+---
+
+### Task T1.2 - Lock-Free Ring Buffer _(3-4 h)_
+
+**Dependencies:** G1.1.
+
+**Implementation steps**
+
+1. Implement `ring_buffer.hpp`: `LockFreeRingBuffer<SlotCount, SlotBytes>`
+   with a `requires` clause enforcing power-of-two `SlotCount > 0`.
+2. Per-slot sequence protocol: each slot owns a sequence counter; producers
+   claim a slot by CAS on its sequence, consumers release it after copying
+   out; a global committed sequence is derived from slot counters so the
+   header's `committed_seq` is recoverable after re-attachment (plan §3 Phase
+   4 recovery requirement).
+3. No allocation or syscalls in the hot path; document the memory-order
+   argument for each `load`/`store`/CAS in comments.
+4. Wire buffer headers into `SharedRegion` (fill `slot_count`, `slot_bytes`)
+   and provide `initialize_region(region, slot_count, slot_bytes)`.
+5. Runtime lock-free verification: `is_lock_free()` checked at init and in
+   tests; document the accepted-platform assumption.
+
+**Deliverables**
+
+- `ring_buffer.hpp` (+ `src/ring_buffer.cpp` for any non-inline code).
+- Tests: empty/full transitions, single-producer single-consumer ordering,
+  multi-producer no-loss accounting (deterministic small scale).
+
+**Verification gate G1.2**
+
+```bash
+cmake -S . -B build/gtest -G Ninja && cmake --build build/gtest --parallel \
+  && ctest --test-dir build/gtest --output-on-failure
+cmake -S . -B build/catch2 -G Ninja -DSAFETY_CRIT_TEST_FRAMEWORK=Catch2 \
+  && cmake --build build/catch2 --parallel \
+  && ctest --test-dir build/catch2 --output-on-failure
+```
+
+Pass when all T1.1 + T1.2 tests pass under both frameworks with the default
+(sanitizer-free) configuration.
+
+---
+
+### Task T1.3 - CRC Integrity and Corruption Detection _(3-4 h)_
+
+**Dependencies:** G1.2.
+
+**Implementation steps**
+
+1. Implement `integrity.hpp` / `src/integrity.cpp`: CRC-32C (hardware
+   intrinsics where available, table fallback) plus a whole-region integrity
+   word combining per-worker header state and `global_seq`.
+2. Store per-slot CRC in each slot; `try_pop` recomputes and on mismatch:
+   skips the slot, advances past it, increments a corruption counter (atomic),
+   and returns false — the consumer must never copy corrupted payload out.
+3. Update `integrity_word` on commit paths so an external observer can detect
+   stale/corrupted headers without parsing slots.
+
+**Deliverables**
+
+- `integrity.hpp/.cpp`, corruption counter, updated pop path.
+- Tests: known CRC vectors; corrupt one slot → consumer skips exactly that
+   message, count = 1, remaining messages intact.
+
+**Verification gate G1.3**
+
+```bash
+cmake -S . -B build/gtest-asan-ubsan -G Ninja \
+  -DSAFETY_CRIT_TEST_FRAMEWORK=GoogleTest \
+  -DSAFETY_CRIT_ENABLE_ASAN=ON -DSAFETY_CRIT_ENABLE_UBSAN=ON
+cmake --build build/gtest-asan-ubsan --parallel
+ctest --test-dir build/gtest-asan-ubsan --output-on-failure
+```
+
+Pass when all tests pass under ASan+UBSan with zero sanitizer diagnostics.
+
+---
+
+### Task T1.4 - Shared Memory Attach/Detach _(3-4 h)_
+
+**Dependencies:** G1.2 (integrity word read-only usage OK before T1.3).
+
+**Implementation steps**
+
+1. Implement `shared_region.hpp` attach API: create-or-open a named `/dev/shm`
+   object of the exact compiled-in region size, `mmap` + `madvise`
+   (`MADV_DONTFORK`, optional `MADV_HUGEPAGE`), construct in place via
+   `initialize`; detect existing-vs-new by identity word and expected size.
+2. Detach: `munmap`, never truncate while peers may be attached. Provide a
+   separate, explicitly destructive "reset" path used only by tests (truncate
+   + re-create) to exercise the re-attachment logic planned for perturbation
+   scenario S6.
+3. All attach code returns explicit error codes (`std::expected`-style pair),
+   no exceptions from the attach path.
+
+**Deliverables**
+
+- Attach/detach/reset API + `shm_attach_test.cpp` (two processes or threads
+  sharing one region; stale-object rejection on wrong magic/size).
+
+**Verification gate G1.4**
+
+```bash
+cmake -S . -B build/gtest -G Ninja && cmake --build build/gtest --parallel \
+  && ctest --test-dir build/gtest --output-on-failure
+ctest --test-dir build/gtest --output-on-failure -R shm
+```
+
+Pass when the attach tests pass, including rejection of a stale or wrong-size
+object in `/dev/shm`.
+
+---
+
+### Task T1.5 - Stress Tests and Phase Exit _(3-4 h)_
+
+**Dependencies:** G1.3, G1.4.
+
+**Implementation steps**
+
+1. Implement `ring_buffer_stress.cpp` per plan §3: 1 producer × N consumers
+   at ≥ 1M ops total; assert no data loss (produced == consumed) and no
+   duplication via per-message sequence verification.
+2. Multi-producer stress: P producers × C consumers, same accounting.
+3. Cache-line/false-sharing check stays green under the stress build.
+4. Run the full Phase 1 matrix and record evidence in `NOTES.md`.
+
+**Deliverables**
+
+- Stress tests, recorded gate evidence, updated README build instructions if
+  any new option appeared (none expected).
+
+**Verification gate G1.5**
+
+```bash
+for fw in GoogleTest Catch2; do
+  cmake -S . -B build/phase1-$fw -G Ninja -DSAFETY_CRIT_TEST_FRAMEWORK=$fw \
+    && cmake --build build/phase1-$fw --parallel \
+    && ctest --test-dir build/phase1-$fw --output-on-failure
+done
+cmake -S . -B build/phase1-asan-ubsan -G Ninja \
+  -DSAFETY_CRIT_ENABLE_ASAN=ON -DSAFETY_CRIT_ENABLE_UBSAN=ON \
+  && cmake --build build/phase1-asan-ubsan --parallel \
+  && ctest --test-dir build/phase1-asan-ubsan --output-on-failure
+```
+
+Pass when all three configurations pass completely.
+
+## Phase Exit Gate
+
+Phase 1 is complete only when G1.1-G1.5 pass and the following evidence is
+attached to the implementation change in `NOTES.md`:
+
+| Required evidence | Source gate |
+|---|---|
+| Flag + layout tests passing under GoogleTest and Catch2 | G1.1 |
+| Ring buffer correctness tests (both frameworks) | G1.2 |
+| ASan+UBSan-clean run including CRC/corruption tests | G1.3 |
+| Attach/detach/stale-rejection test output | G1.4 |
+| Full-matrix stress results (≥1M ops, zero loss/duplication) | G1.5 |
+| Hosted CI green on the Phase 1 merge commit | exit |
+
+No Phase 2 worker implementation may be accepted until this exit gate is
+satisfied.
+
+## Handoff to Phase 2
+
+Phase 2 adds `workers/` that attach to a region created via T1.4, push/pull
+through T1.2/T1.3 buffers, and drive `worker_status` via T1.1 flags. The
+region layout in this phase is frozen for Phase 2; any later change requires
+bumping `kRegionVersion` and updating the verify path.
