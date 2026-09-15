@@ -124,4 +124,17 @@ Date: 2026-09-15
 |`bash -n run_demo.sh`|PASS|
 |`./run_demo.sh`|PASS - exit 0 from a clean Docker state; validated compose config, built stack, started default services, showed status, ran version check, and tore down via trap (0 containers remaining after run)|
 |`git diff --check`|PASS - no whitespace errors|
-|Hosted CI (.github/workflows/ci.yml: native-gtest, native-catch2, docker-build, docker-compose-smoke)|PENDING - workflow committed; result must be observed on the hosted runner after push. Remote: origin (github.com/tslator/safety-critical-high-availability)|
+|Hosted CI (.github/workflows/ci.yml: native-gtest, native-catch2, docker-build, docker-compose-smoke)|PASS - run 35010759345 on commit 157d582 (2026-09-15): all four jobs (Native CMake + GoogleTest, Native CMake + Catch2, Container image smoke, Compose runtime smoke) succeeded|
+
+---
+
+Gate: G1.1 (Phase 1 T1.1 - shared region layout and atomic flags)
+Date: 2026-09-15
+|Command|Result|
+|---|---|
+|`cmake -S . -B build/gtest -G Ninja -DSAFETY_CRIT_TEST_FRAMEWORK=GoogleTest && cmake --build build/gtest --parallel && ctest --test-dir build/gtest --output-on-failure` (fresh dir)|PASS - 8/8 tests, zero warnings under `-Wall -Wextra -Wpedantic -Wconversion -Wshadow`. New: AtomicFlags.{SetClearHas,BitsAreIndependent,WithFlagCombinesWithoutCrossBleed}, SharedRegionLayout.{CompileTimeInvariants,NoFalseSharingBetweenWorkers}, SharedRegion.{InitializeAndVerify,RejectsBadIdentity}; Phase 0 Smoke.AlwaysPasses retained.|
+|`cmake -S . -B build/catch2 -G Ninja -DSAFETY_CRIT_TEST_FRAMEWORK=Catch2 && ... ctest` (fresh dir)|PASS - 8/8 tests under Catch2 (suites via `[tag]`).|
+|ASan+UBSan matrix: `-DSAFETY_CRIT_ENABLE_ASAN=ON -DSAFETY_CRIT_ENABLE_UBSAN=ON`|PASS - 8/8, no sanitizer diagnostics.|
+|Tests-off path: `-DSAFETY_CRIT_BUILD_TESTING=OFF`|PASS - app builds and `--version` exits zero; CTest reports zero tests (expected).|
+
+Notes: `safety_crit_register_tests` now centralizes adapter-header generation + framework selection macro + include path (previously duplicated per module); test adapter macro generalized to `SAFETY_CRIT_TEST_CASE(suite, name)`. `CMake/Warnings.cmake` materializes the Phase 0 Task 0.2 warning policy for first-party targets. `enable_testing()` moved ahead of `add_subdirectory(shared-memory)` so that subtree's tests register (was silently dropped).
