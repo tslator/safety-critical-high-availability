@@ -10,3 +10,10 @@ target_link_libraries(shared_region_layout_test PRIVATE safety_crit::shared_memo
 safety_crit_apply_warnings(shared_region_layout_test)
 safety_crit_apply_sanitizers(shared_region_layout_test)
 safety_crit_register_tests(shared_region_layout_test)
+
+# T1.2: lock-free ring buffer (protocol, ordering, MPMC accounting, recovery).
+add_executable(ring_buffer_test ring_buffer_test.cpp)
+target_link_libraries(ring_buffer_test PRIVATE safety_crit::shared_memory)
+safety_crit_apply_warnings(ring_buffer_test)
+safety_crit_apply_sanitizers(ring_buffer_test)
+safety_crit_register_tests(ring_buffer_test)

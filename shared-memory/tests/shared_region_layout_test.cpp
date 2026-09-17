@@ -28,6 +28,8 @@ SAFETY_CRIT_TEST_CASE(SharedRegionLayout, NoFalseSharingBetweenWorkers) {
     for (std::size_t i = 0; i < kMaxWorkers; ++i) {
         SAFETY_CRIT_ASSERT(reinterpret_cast<std::uintptr_t>(&region.ring_buffers[i]) % 64 == 0);
         SAFETY_CRIT_ASSERT(reinterpret_cast<std::uintptr_t>(&region.worker_status[i].status) % 64 == 0);
+        // T1.2: each worker's ring starts on its own line.
+        SAFETY_CRIT_ASSERT(reinterpret_cast<std::uintptr_t>(&region.rings[i]) % 64 == 0);
     }
     // Every worker's header and status cell sits on its own cache line, and
     // none of them shares a line with global_seq.
@@ -36,6 +38,9 @@ SAFETY_CRIT_TEST_CASE(SharedRegionLayout, NoFalseSharingBetweenWorkers) {
             SAFETY_CRIT_ASSERT(line_of(&region.worker_status[a].status) !=
                                line_of(&region.worker_status[b].status));
             SAFETY_CRIT_ASSERT(line_of(&region.ring_buffers[a]) != line_of(&region.ring_buffers[b]));
+            // T1.2: producer/consumer state words never share a line across workers.
+            SAFETY_CRIT_ASSERT(line_of(&region.rings[a].head_) != line_of(&region.rings[b].head_));
+            SAFETY_CRIT_ASSERT(line_of(&region.rings[a].tail_) != line_of(&region.rings[b].tail_));
         }
         SAFETY_CRIT_ASSERT(line_of(&region.worker_status[a].status) != line_of(&region.global_seq));
         SAFETY_CRIT_ASSERT(line_of(&region.ring_buffers[a]) != line_of(&region.global_seq));
@@ -51,7 +56,9 @@ SAFETY_CRIT_TEST_CASE(SharedRegion, InitializeAndVerify) {
     SAFETY_CRIT_ASSERT(region.global_seq.load(std::memory_order_acquire) == 0);
     for (std::size_t i = 0; i < kMaxWorkers; ++i) {
         SAFETY_CRIT_ASSERT(region.worker_status[i].status.load(std::memory_order_acquire) == 0);
-        SAFETY_CRIT_ASSERT(region.ring_buffers[i].slot_count == 0);
+        // T1.2: headers record the compiled-in dimensions at init time.
+        SAFETY_CRIT_ASSERT(region.ring_buffers[i].slot_count == kDefaultSlotCount);
+        SAFETY_CRIT_ASSERT(region.ring_buffers[i].slot_bytes == kDefaultSlotBytes);
         SAFETY_CRIT_ASSERT(!load_has_flag(region.worker_status[i].status, WorkerStatusFlag::kRunning));
     }
 }
