@@ -76,6 +76,15 @@ jobs:
           ${@} cmake --build build/${{ matrix.framework }} --parallel
           ${@} ctest --test-dir build/${{ matrix.framework }} --output-on-failure
 
+  agent-guidance-drift:
+    name: AI guidance adapter drift check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Verify AGENTS.md and copilot-instructions.md match docs/ai-guidance/CORE.md
+        run: ./scripts/sync-agent-guidance.sh --check
+
   docker-build:
     name: Container image smoke
     runs-on: ubuntu-latest

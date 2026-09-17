@@ -11,7 +11,9 @@ See [project status](docs/STATUS.md) for the current phase table and next
 tasks. The [architecture](docs/ARCHITECTURE.md), [development guide](docs/DEVELOPMENT.md),
 [decisions](docs/decisions/), [reviews](docs/reviews/), [tasks](docs/tasks/),
 and [evidence](docs/evidence/) records preserve the reasoning and validation
-behind distributed work.
+behind distributed work. [AI agent guidance](docs/ai-guidance/README.md) is
+authored under `docs/ai-guidance/`; `AGENTS.md` and
+`.github/copilot-instructions.md` are generated from it.
 
 ## Bootstrap
 

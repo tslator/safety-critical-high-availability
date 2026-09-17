@@ -1,0 +1,9 @@
+#!/bin/sh
+# Optional convenience hook: verifies AGENTS.md and
+# .github/copilot-instructions.md match docs/ai-guidance/CORE.md before
+# commit. Not required — CI (agent-guidance-drift job) is the mandatory
+# enforcement point. Enable with: git config core.hooksPath scripts/hooks
+set -e
+
+repo_root="$(git rev-parse --show-toplevel)"
+"$repo_root/scripts/sync-agent-guidance.sh" --check

@@ -25,6 +25,7 @@
 
 - [Development guide](DEVELOPMENT.md)
 - [Architecture](ARCHITECTURE.md)
+- [AI guidance](ai-guidance/README.md)
 - [Discussions](DISCUSSIONS.md)
 - [Tasks](tasks/README.md)
 - [Decisions](decisions/)
