@@ -1,11 +1,23 @@
 # Safety-Critical High Availability
 
+## Current Status
+
+Phase 0 is complete. Phase 1 is in progress: the shared-memory layout, atomic
+worker flags, and lock-free ring buffer are implemented and covered by the
+current test and sanitizer matrix. CRC integrity, named shared-memory attach,
+and the Phase 1 exit gate remain planned work.
+
+See [project status](docs/STATUS.md) for the current phase table and next
+tasks. The [architecture](docs/ARCHITECTURE.md), [development guide](docs/DEVELOPMENT.md),
+[decisions](docs/decisions/), [reviews](docs/reviews/), [tasks](docs/tasks/),
+and [evidence](docs/evidence/) records preserve the reasoning and validation
+behind distributed work.
+
 ## Bootstrap
 
-This Phase 0 project provides a C++20 CMake build, smoke tests, and a
-containerized runtime baseline. It does not yet implement the shared-memory,
-worker, supervisor, failover, or fault-injection features planned for later
-phases.
+This project provides a C++20 CMake build, shared-memory library, smoke tests,
+and a containerized runtime baseline. Worker processes, supervisor, failover,
+and fault-injection features remain planned for later phases.
 
 ### Host Requirements
 
