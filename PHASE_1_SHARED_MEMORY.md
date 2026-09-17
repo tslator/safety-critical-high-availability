@@ -68,6 +68,85 @@ CTest coverage; they must not replace the Phase 0 smoke test.
    {GoogleTest, Catch2} was added to `ci.yml` at Phase 1 start so every
    commit from T1.2 onward is sanitizer-gated (TSan combinations run the
    toolchain under `setarch --addr-no-randomize`; see NOTES.md for why).
+6. **Ring slot-counter markers corrected before first use.** The initial
+   T1.2 implementation used the "sequence = position + k*n" marker family
+   (commit stores `p + n`, release stores `p + 2*n`). A hand trace plus a
+   standalone harness showed that family livelocks after one full drain
+   cycle: once a slot is released, its counter no longer satisfies the
+   producer's claim condition for the next lap. The implemented protocol
+   instead uses per-slot ready/commit markers (`ready(P_k) = P_k`,
+   `commit(P_k) = P_k + 1`; release stores `P_k + n`, which is exactly
+   `ready(P_{k+1})`). The marker offset (1) must be strictly less than
+   SlotCount, so the class requires `SlotCount >= 2`. Correctness evidence:
+   deterministic multi-lap + full-queue rejection scenarios in a standalone
+   harness (the old scheme fails both), the T1.2 CTest suite under both
+   frameworks, and the ASan/TSan CI matrix.
+7. **Attach-time verification checks per-slot windows, not derived minima; the
+   phantom `committed_seq` watermark was removed.** Independent review of the
+   first T1.2 draft found that comparing only the *derived minima* of the slot
+   counters with the stored head/tail accepts an impossible state: a well-formed
+   counter corrupted into a future lap on a non-minimal slot (e.g. empty ring,
+   slot 1 moved `ready(1) -> ready(1+n)`) leaves every minimum untouched.
+   `verify_consistent()` now decodes *every* slot and requires it to match the
+   stored window exactly: for `h = head_`, `t = tail_` (with `0 <= h <= t
+   <= h + n`), slot i's first unconsumed/uncommitted positions must be
+   `min{p ≡ i (mod n) : p >= h}` / `min{p ≡ i (mod n) : p >= t}`. This
+   requires the ring to be quiescent at verification time (an in-flight claim
+   legitimately lags by one step), which matches the plan's re-attachment flow
+   (verify a worker's ring only when that worker is known idle or dead); the
+   requirement is documented on both `verify_consistent()` and
+   `SharedRegion::verify()`. Related: T1.2 step 2 asked for a header
+   `committed_seq` recoverable after re-attachment, but the last-consumed
+   sequence for a worker is exactly its ring's `head_` counter -- maintained
+   by the protocol on every pop and cross-checked against the slot counters by
+   the window check above. A separately stored copy could only be written at
+   initialization (going stale after the first consumption), so the field was
+   replaced by an explicit reserved word (layout stays 64-byte aligned, no
+   version bump -- v2 never shipped). If Phase 4 needs a supervisor-facing
+   global watermark, derive it at attach time as the max over the workers'
+   rings instead of maintaining it incrementally. Regression coverage:
+   `RingBufferProtocol.FutureLapCorruptionRejectedByWindowCheck` (the exact
+   evasion pattern plus inverted/over-wide windows) and
+   `RingBufferProtocol.WindowCheckAcceptsQuiescentBoundaries` (empty/partial/
+   full/mid-lap states must not be over-rejected).
+   **Residual risk (assessed, mitigated at the API level):** the window check
+   depends on its quiescence precondition, which callers must enforce. The
+   failure direction is one-way: transient in-flight states (an uncommitted
+   claim, an unlanded release, a torn head_/tail_ read) can only produce a
+   *spurious false* -- a corrupted slot's stored value is fixed at inspection
+   time and no other thread's transient state can move it into coincidence
+   with the window. So this is an availability risk (a healthy ring rejected,
+   potentially triggering unnecessary re-verification or failover), never an
+   integrity risk, and the documented caller rule is: treat a single false as
+   "unverified", re-check under established quiescence before acting. Mitigations:
+   (a) `verify_consistent()` documents the direction and the caller rule;
+   (b) `SharedRegion` now exposes scoped checks -- `verify_identity()`
+   (quiescence-independent, safe at any time), `verify_worker_ring(region,
+   idx)` (only that worker's ring; its quiescence is guaranteed in the plan's
+   re-attachment flow because the victim is dead or paused), and the existing
+   `verify(region)` (all rings; for pre-boot/maintenance use) -- so the
+   natural Phase 2/4 call pattern never reads live neighbours' rings;
+   (c) both behaviours are pinned by deterministic tests that emulate an
+   in-flight claim (`RingBufferProtocol.InFlightClaimReadsAsInconsistentUntilCommitted`,
+   `SharedRegionRings.VerificationScopesToQuiescentWorkers`). Deliberately NOT
+   mitigated by tolerating one-step-off slot states: any tolerance band makes
+   a rewound/corrupted counter indistinguishable from a live claim, which
+   would convert the availability risk back into an integrity risk.
+8. **Negative witness for the one-slot rejection is now executable.** An
+   independent review note (`RING_BUFFER_NEGATIVE_WITNESS_NOTE.md`, since
+   folded in and removed) confirmed -- and we re-verified on GCC 13.3.0 --
+   that naming a constrained class template-id whose constraint fails outside
+   an immediate substitution context is a hard error on this toolchain, in
+   both `requires { typename LockFreeRingBuffer<1, 16>; }` and as the explicit
+   argument of a type-parameter detection trait. The note's suggested
+   class-parameter `void_t` witness therefore does not compile; the working
+   form passes the dimensions through non-type parameters so the id is formed
+   during partial-specialization matching (a substitution context). The test
+   now carries that trait (`ring_instantiable<N, B>`) with positive and
+   negative witnesses for 1/2/3-slot configurations, plus a comment scoped as
+   compiler-observed behavior with both failing forms named for falsification.
+   No production code changed; constraint enforcement itself was already
+   correct.
 
 ## Target Outcome
 
