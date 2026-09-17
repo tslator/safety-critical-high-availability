@@ -150,3 +150,14 @@ Date: 2026-09-15
 |Local TSan + Catch2 (fresh dir)|PASS - 8/8 tests, no diagnostics (under `setarch $(uname -m) --addr-no-randomize`)|
 
 Notes: TSan's fixed shadow-memory reservation collides with ASLR in this dev sandbox - even `g++ -fsanitize=thread` on `int main(){return 0;}` fails with `FATAL: ThreadSanitizer: unexpected memory mapping` (exit 66). Running the toolchain under `setarch --addr-no-randomize` resolves it, so the CI step does exactly that for the TSan combinations (personality is inherited by discovery and ctest children); no effect on the ASan+UBSan jobs. Workflow renamed "Phase 0 CI" -> "CI".
+
+Gate: G1.2 (Phase 1 T1.2 - lock-free MPMC ring buffer)
+Date: 2026-09-17
+|Command / Check|Result|
+|---|---|
+|Local matrix {GoogleTest, Catch2} x {plain, ASan+UBSan, TSan}, fresh build dirs each; TSan under `setarch $(uname -m) --addr-no-randomize`|PASS - 24/24 tests per configuration (16 new: RingBufferProtocol x10 incl. FutureLapCorruptionRejectedByWindowCheck / WindowCheckAcceptsQuiescentBoundaries / InFlightClaimReadsAsInconsistentUntilCommitted, RingBufferOrdering.SPSC FIFO 4096, RingBufferMultithreaded x2, SharedRegionRings x3), zero warnings, zero sanitizer diagnostics in all six configs|
+|Stress soaks (standalone against the shipped header): 8 producers x 20k items through the default 1024-slot ring, per-producer FIFO integrity + `verify_consistent()` at quiescence, 5x10s runs|PASS - 160,000 items per run, zero payload corruption, state consistent at quiescence every run|
+|Negative-witness experiments (GCC 13.3.0): `requires { typename LockFreeRingBuffer<1,16>; }` and a type-parameter void_t trait both hard-error; the NTTP-parameter `ring_instantiable<N,B>` trait compiles with all three constraint witnesses holding|PASS - behavior matches the reworded test comment (deviation #8)|
+|Hosted CI (.github/workflows/ci.yml: native x2, sanitizers {ASan+UBSan, TSan} x2, docker x2)|PASS - run 35214976207 on commit 95f9506 (2026-09-17): all eight jobs succeeded|
+
+Notes: T1.2 shipped as two commits (b4dd249 code+tests, 95f9506 docs). Protocol and verification decisions are recorded as deviations #6-#8 in PHASE_1_SHARED_MEMORY.md: the plan sketch's CAS logic was replaced by a per-slot ready/commit marker protocol (an initial Vyukov position-marker variant livelocked after one lap); attach-time verification uses a per-slot [head, tail] window check with documented quiescence precondition and one-way failure direction; `SharedRegion` exposes scoped attach checks (`verify_identity`, `verify_worker_ring`, whole-region `verify`); the redundant `RingBufferHeader::committed_seq` was removed (the watermark is the ring's `head_` counter). An independent review round drove the window check, scoping API, and executable negative witness; its proposed class-parameter void_t idiom was shown not to compile on GCC 13 and corrected to the NTTP form.
