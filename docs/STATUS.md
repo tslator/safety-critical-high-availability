@@ -31,4 +31,5 @@
 - [Decisions](decisions/)
 - [Reviews](reviews/)
 - [Evidence](evidence/)
-- [Phase plans](../PHASE_0_CONTAINER_AND_TOOLING.md) and [Phase 1 plan](../PHASE_1_SHARED_MEMORY.md)
+- [Phase plans](phases/README.md)
+- [Phase 0 plan](phases/PHASE_0_CONTAINER_AND_TOOLING.md) and [Phase 1 plan](phases/PHASE_1_SHARED_MEMORY.md)

@@ -38,7 +38,7 @@ using RingBuffer = LockFreeRingBuffer<kDefaultSlotCount, kDefaultSlotBytes>;
 // initialization could write it), and a stale safety-relevant value is worse
 // than no field. If a supervisor-facing global watermark becomes necessary,
 // derive it at attach time as the max over the workers' rings (deviation #7
-// in PHASE_1_SHARED_MEMORY.md).
+// in docs/phases/PHASE_1_SHARED_MEMORY.md).
 struct alignas(64) RingBufferHeader {
     std::uint64_t slot_count{0};   // power of two, enforced at construction
     std::uint32_t slot_bytes{0};

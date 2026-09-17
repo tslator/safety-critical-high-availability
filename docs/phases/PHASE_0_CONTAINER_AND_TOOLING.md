@@ -58,7 +58,9 @@ The repository contains this initial layout after all tasks complete:
 │   └── smoke_test.cpp
 ├── run_demo.sh
 ├── README.md
-├── PHASE_0_CONTAINER_AND_TOOLING.md
+├── docs/
+│   └── phases/
+│       └── PHASE_0_CONTAINER_AND_TOOLING.md
 └── SAFETY_CRITICAL_HA_PLAN.md
 ```
 

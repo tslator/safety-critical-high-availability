@@ -29,6 +29,7 @@ change that touches shared memory, worker, monitor, or supervisor code.
 | Discussion → decision → task → evidence | [`TASK_WORKFLOW.md`](TASK_WORKFLOW.md) |
 | Architecture detail | [`../ARCHITECTURE.md`](../ARCHITECTURE.md) |
 | Build/test commands | [`../DEVELOPMENT.md`](../DEVELOPMENT.md) |
+| Phase execution plans | [`../phases/README.md`](../phases/README.md) |
 
 This directory (`docs/ai-guidance/`) is authoritative. Do not duplicate its
 guidance into `AGENTS.md`, `.github/copilot-instructions.md`, or elsewhere;

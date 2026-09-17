@@ -9,6 +9,7 @@ and the Phase 1 exit gate remain planned work.
 
 See [project status](docs/STATUS.md) for the current phase table and next
 tasks. The [architecture](docs/ARCHITECTURE.md), [development guide](docs/DEVELOPMENT.md),
+[phase plans](docs/phases/README.md),
 [decisions](docs/decisions/), [reviews](docs/reviews/), [tasks](docs/tasks/),
 and [evidence](docs/evidence/) records preserve the reasoning and validation
 behind distributed work. [AI agent guidance](docs/ai-guidance/README.md) is

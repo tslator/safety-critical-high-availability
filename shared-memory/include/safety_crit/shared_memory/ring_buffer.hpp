@@ -27,7 +27,7 @@ inline constexpr bool is_power_of_two_v = (N > 0) && ((N & (N - 1)) == 0);
 // lineage of Dmitry Vyukov's bounded MPMC queue (cf. moodycamel::
 // ConcurrentQueue and boost.lockfree). This replaces the plan sketch's
 // try_push/try_pop CAS logic, which did not define correct multi-producer
-// slot ownership (see PHASE_1_SHARED_MEMORY.md, deviations #1).
+// slot ownership (see docs/phases/PHASE_1_SHARED_MEMORY.md, deviations #1).
 //
 // State (n = SlotCount >= 2; let P_k(i) = i + k*n be the k-th position
 // served by slot i):
