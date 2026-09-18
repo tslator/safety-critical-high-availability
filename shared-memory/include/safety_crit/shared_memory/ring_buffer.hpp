@@ -7,6 +7,8 @@
 #include <limits>
 #include <type_traits>
 
+#include "safety_crit/shared_memory/integrity.hpp"
+
 namespace safety_crit::shared_memory {
 
 // Compile-time ring configuration predicate. SlotCount must be a power of two
@@ -60,6 +62,18 @@ inline constexpr bool is_power_of_two_v = (N > 0) && ((N & (N - 1)) == 0);
 //                                        lap's item awaits release -> full
 //   consumer at p: seq - (p + 1) < 0  -> position p not yet committed -> empty
 //
+// Integrity (T1.3): each cell stores the CRC-32C of its full payload field in
+// `crc` (plain uint32_t, written by the producer under exclusive ownership
+// immediately before the commit store -- visibility rides the same
+// release/acquire edge as the payload; no thread may touch a cell's bytes
+// outside the claim/release window). try_pop recomputes over the full field
+// after claiming and, on mismatch, releases the slot with the normal ready(p+n)
+// marker, increments corruption_count_, and returns false without copying the
+// payload out. Skipped positions are lost by design (detection and accounting,
+// not recovery). Correlated corruption that flips payload and CRC consistently
+// remains undetectable (~2^-32 per random event) -- outside any single-slot
+// checksum's model.
+//
 // 64-bit counter lifetime assumption: the signed-difference math is valid
 // while positions stay below 2^63. At a sustained 10 million operations per
 // second that is roughly 2.9e8 years; the project's lifetime bound is many
@@ -82,6 +96,13 @@ inline constexpr bool is_power_of_two_v = (N > 0) && ((N & (N - 1)) == 0);
 //     a consumer owns it between claim and release. No other thread may read
 //     or write those bytes in that window (that invariant is the protocol's
 //     core guarantee).
+//   - The `crc` field is a plain uint32_t touched only inside that same
+//     ownership window: the producer stores it after writing the payload and
+//     before the commit store; the consumer reads it after its claim, once the
+//     admitting acquire load of `sequence` has synchronized with the commit.
+//     Publication rides the sequence edge -- no extra RMW per operation.
+//   - `corruption_count_` is a relaxed atomic fetch_add on the corruption path
+//     only: observability-only, never gates a protocol decision.
 template <std::size_t SlotCount, std::size_t SlotBytes>
     requires is_power_of_two_v<SlotCount> && (SlotCount >= 2) && (SlotBytes > 0)
 class LockFreeRingBuffer {
@@ -93,9 +114,14 @@ public:
     // One slot occupies whole cache lines only: `alignas(64)` makes each array
     // element start on a fresh line, and the trailing padding is part of the
     // struct, so no two slots share a line (no false sharing between slots).
+    // With the region's default dimensions the fields fill the line exactly:
+    // sequence (8) + payload (52) + crc (4) = 64 bytes. The CRC lives in the
+    // cell (T1.3): slot i is judged from cell i alone, and the tag stays inside
+    // the same exclusive-ownership window as the payload it authenticates.
     struct alignas(64) Cell {
         std::atomic<std::uint64_t> sequence{0};
         char payload[SlotBytes];
+        std::uint32_t crc{0};  // T1.3: CRC-32C over the full payload field
     };
 
     // Derived from slot counters only; see derive_state().
@@ -120,10 +146,12 @@ public:
         }
         head_.store(0, std::memory_order_relaxed);
         tail_.store(0, std::memory_order_relaxed);
+        corruption_count_.store(0, std::memory_order_relaxed);
         // NOTE: the initial sequence of cell i is the index i (not zero):
         // a slot at position p becomes producible when its sequence equals p.
         for (std::size_t i = 0; i < kSlotCount; ++i) {
             cells_[i].sequence.store(static_cast<std::uint64_t>(i), std::memory_order_relaxed);
+            cells_[i].crc = 0u;  // uncommitted slots are never CRC-checked
         }
         return true;
     }
@@ -149,8 +177,14 @@ public:
                 // so the loop re-derives everything from a fresh view.
                 if (tail_.compare_exchange_weak(pos, pos + 1, std::memory_order_relaxed)) {
                     // Claimed: exclusive ownership from here until the commit
-                    // store below publishes the payload to consumers.
+                    // store below publishes payload and CRC to consumers.
                     std::memcpy(cell.payload, &value, sizeof(T));
+                    // T1.3: authenticate the FULL payload field, not just
+                    // sizeof(T): bytes past the value may hold stale data from
+                    // an earlier lap and are verified too (see DEC-0005 #3).
+                    // Plain store under exclusive ownership -- visibility rides
+                    // the commit release-store below.
+                    cell.crc = crc32c(cell.payload, kSlotBytes);
                     cell.sequence.store(pos + 1, std::memory_order_release);
                     return true;  // committed: slot holds commit(p) = p + 1
                 }
@@ -184,6 +218,26 @@ public:
                 // acquire load above synchronizes-with the producer's commit,
                 // so the payload is visible.
                 if (head_.compare_exchange_weak(pos, pos + 1, std::memory_order_relaxed)) {
+                    // T1.3 integrity gate: recompute over the full payload
+                    // field and compare before anything is copied out. Plain
+                    // reads under exclusive ownership (claim .. release); the
+                    // admitting acquire load of `sequence` already
+                    // synchronized with the producer's commit, which published
+                    // payload and CRC together.
+                    if (cell.crc != crc32c(cell.payload, kSlotBytes)) {
+                        // Corrupted: never copy the payload out. Release with
+                        // the same marker a clean pop stores -- protocol state
+                        // stays valid and verify_consistent() still holds --
+                        // count the loss exactly once (ownership makes this
+                        // release single-shot), and report "no value delivered
+                        // on this call": in return value indistinguishable
+                        // from empty, observable via corruption_count(). The
+                        // corrupted message is lost by design: detection and
+                        // accounting, not recovery.
+                        cell.sequence.store(pos + n, std::memory_order_release);
+                        corruption_count_.fetch_add(1u, std::memory_order_relaxed);
+                        return false;
+                    }
                     std::memcpy(&out, cell.payload, sizeof(T));
                     cell.sequence.store(pos + n, std::memory_order_release);
                     return true;  // released: stored value is ready(p+n), the
@@ -203,6 +257,13 @@ public:
     // Observability and tests only -- the protocol never branches on these.
     std::uint64_t pushed() const { return tail_.load(std::memory_order_relaxed); }
     std::uint64_t consumed() const { return head_.load(std::memory_order_relaxed); }
+
+    // T1.3: positions skipped because the stored CRC did not match the
+    // recomputation over the slot payload (see try_pop). Observability and
+    // tests only -- no protocol decision branches on this counter.
+    std::uint64_t corruption_count() const {
+        return corruption_count_.load(std::memory_order_relaxed);
+    }
 
     [[nodiscard]] bool empty() const {
         // Invariant: tail_ - head_ stays within [0, SlotCount], so equality
@@ -348,6 +409,11 @@ public:
     // two sides never false-share a line.
     alignas(64) std::atomic<std::uint64_t> tail_{0};
     alignas(64) std::atomic<std::uint64_t> head_{0};
+
+    // T1.3: per-ring corruption counter. Consumer-side word (producers never
+    // write it) on its own cache line, so no producer state false-shares with
+    // it and consumers' counter updates don't bounce a producer's line.
+    alignas(64) std::atomic<std::uint64_t> corruption_count_{0};
 
 private:
     alignas(64) Cell cells_[kSlotCount];

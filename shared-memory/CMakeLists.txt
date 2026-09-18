@@ -1,5 +1,6 @@
 # Library: safety_crit::shared_memory (Phase 1)
 add_library(safety_crit_shared_memory STATIC
+    src/integrity.cpp
     src/shared_region.cpp
 )
 add_library(safety_crit::shared_memory ALIAS safety_crit_shared_memory)

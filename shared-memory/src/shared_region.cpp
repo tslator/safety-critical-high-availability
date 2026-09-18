@@ -3,7 +3,27 @@
 #include <atomic>
 #include <cstring>
 
+#include "safety_crit/shared_memory/integrity.hpp"
+
 namespace safety_crit::shared_memory {
+namespace {
+
+// The integrity word's definition (DEC-0005 #5): crc32c over the raw
+// per-worker header block followed by global_seq serialized as 8 little-
+// endian bytes (explicit serialization: layout-stable across observers and
+// independent of host endianness or in-memory atomic representation).
+std::uint32_t region_integrity_at(const SharedRegion& region, std::uint64_t global_seq) {
+    std::uint32_t state = crc32c_update(crc32c_init(), region.ring_buffers,
+                                        sizeof(region.ring_buffers));
+    std::uint8_t seq_bytes[8];
+    for (int i = 0; i < 8; ++i) {
+        seq_bytes[i] = static_cast<std::uint8_t>(global_seq >> (8 * i));
+    }
+    state = crc32c_update(state, seq_bytes, sizeof(seq_bytes));
+    return crc32c_finalize(state);
+}
+
+}  // namespace
 
 bool initialize(SharedRegion& region, std::uint64_t slot_count,
                 std::uint32_t slot_bytes) {
@@ -44,7 +64,9 @@ bool initialize(SharedRegion& region, std::uint64_t slot_count,
         cell.status.store(0, std::memory_order_relaxed);
     }
     region.global_seq.store(0, std::memory_order_relaxed);
-    region.integrity_word.store(0, std::memory_order_relaxed);
+    // T1.3: seed the integrity word from the just-filled headers and seq 0 so
+    // a freshly initialized region is self-consistent before any commit.
+    region.integrity_word.store(region_integrity_at(region, 0), std::memory_order_relaxed);
     return true;
 }
 
@@ -82,6 +104,38 @@ bool verify(const SharedRegion& region) {
         }
     }
     return true;
+}
+
+std::uint32_t compute_region_integrity(const SharedRegion& region) {
+    // Observers/tests: recompute from the *observed* seq. Reading the headers
+    // as plain words is safe -- they are written once by initialize before the
+    // region is shared.
+    return region_integrity_at(region, region.global_seq.load(std::memory_order_relaxed));
+}
+
+void refresh_region_integrity(SharedRegion& region) {
+    // CAS-converging refresh (DEC-0005 #5). The seq is re-read every iteration,
+    // and global_seq only increases, so a value can only be stored while the
+    // word still holds what was loaded alongside that read -- i.e. the seq
+    // argument of the stored word advances monotonically. At quiescence no
+    // fetch_add remains, every in-flight updater reads the final seq F and
+    // wants exactly H(headers, F); the first such CAS wins and all later
+    // iterations take the fast path, so the last store always leaves a
+    // consistent word. Under live traffic transient inconsistency is possible;
+    // it is one-way (spurious mismatch for a live observer, never masked
+    // corruption), mirroring verify_consistent()'s documented direction.
+    for (;;) {
+        const std::uint32_t expected = region.integrity_word.load(std::memory_order_relaxed);
+        const std::uint32_t want =
+            region_integrity_at(region, region.global_seq.load(std::memory_order_relaxed));
+        if (expected == want) {
+            return;  // already consistent: this state is covered
+        }
+        std::uint32_t seen = expected;
+        if (region.integrity_word.compare_exchange_weak(seen, want, std::memory_order_relaxed)) {
+            return;
+        }
+    }
 }
 
 }  // namespace safety_crit::shared_memory

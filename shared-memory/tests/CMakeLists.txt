@@ -17,3 +17,10 @@ target_link_libraries(ring_buffer_test PRIVATE safety_crit::shared_memory)
 safety_crit_apply_warnings(ring_buffer_test)
 safety_crit_apply_sanitizers(ring_buffer_test)
 safety_crit_register_tests(ring_buffer_test)
+
+# T1.3: CRC integrity (known vectors, corruption skip path, region word).
+add_executable(integrity_test integrity_test.cpp)
+target_link_libraries(integrity_test PRIVATE safety_crit::shared_memory)
+safety_crit_apply_warnings(integrity_test)
+safety_crit_apply_sanitizers(integrity_test)
+safety_crit_register_tests(integrity_test)

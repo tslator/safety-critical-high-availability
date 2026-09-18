@@ -14,17 +14,20 @@ inline constexpr std::size_t kMaxWorkers = 3;
 // Region identity ("SHMA"). The magic word guards against attaching to a
 // wrong or stale object in /dev/shm; bump the version when the layout changes.
 // Version history: v1 (T1.1) had no slot storage; v2 (T1.2) embeds one
-// RingBuffer per worker and fills the ring headers at initialization.
+// RingBuffer per worker and fills the ring headers at initialization; v3
+// (T1.3) adds a per-slot CRC field to each cell (payload 56 -> 52 bytes, cell
+// still exactly one cache line) plus a per-ring corruption counter.
 inline constexpr std::uint32_t kRegionMagic = 0x53484D41u;
-inline constexpr std::uint32_t kRegionVersion = 2u;
+inline constexpr std::uint32_t kRegionVersion = 3u;
 
 // Project-wide default ring dimensions (T1.2). All workers and all processes
 // build with the same values: the slot arrays are part of this struct, so the
 // dimensions are compile-time facts about the layout, exactly like
-// kRegionVersion. SlotBytes = 56 makes each Cell exactly one 64-byte cache
-// line (8-byte sequence + 56 payload bytes).
+// kRegionVersion. SlotBytes = 52 makes each Cell exactly one 64-byte cache
+// line (8-byte sequence + 52 payload bytes + 4-byte CRC; T1.3 shrunk the
+// payload from 56 to make room for the in-cell CRC field -- DEC-0005 #1).
 inline constexpr std::size_t kDefaultSlotCount = 1024;  // power of two
-inline constexpr std::size_t kDefaultSlotBytes = 56;
+inline constexpr std::size_t kDefaultSlotBytes = 52;
 
 using RingBuffer = LockFreeRingBuffer<kDefaultSlotCount, kDefaultSlotBytes>;
 
@@ -64,11 +67,16 @@ struct alignas(64) SharedRegion {
     Identity identity;                                   // offset 0
     RingBufferHeader ring_buffers[kMaxWorkers];          // one cache line each
     WorkerStatusCell worker_status[kMaxWorkers];         // one cache line each
-    // One ring per worker. Each RingBuffer is ~64 KiB with the default
-    // dimensions, so a full region is ~200 KiB -- well within the 64 MiB
-    // /dev/shm mount configured in Phase 0 (compose + CI).
+    // One ring per worker. Each RingBuffer is just over 64 KiB with the
+    // default dimensions, so a full region is ~193 KiB -- well within the
+    // 64 MiB /dev/shm mount configured in Phase 0 (compose + CI).
     RingBuffer rings[kMaxWorkers];
     alignas(64) std::atomic<std::uint64_t> global_seq{0};
+    // T1.3: maintained, not vestigial. integrity_word == crc32c over the
+    // per-worker header block (ring_buffers[]) followed by the 8 bytes of
+    // global_seq; seeded by initialize() and refreshed on every region-level
+    // commit (push below). An external observer recomputes it to detect
+    // stale/corrupted headers without parsing slots (plan T1.3 steps 1/3).
     std::atomic<std::uint32_t> integrity_word{0};        // shares the last cell with
                                                          // global_seq (global, not
                                                          // per-worker: no false-sharing risk)
@@ -93,8 +101,9 @@ static_assert(sizeof(SharedRegion) % 64 == 0);
 //
 // Returns false without modifying the region when the dimensions disagree or
 // 64-bit atomics are not lock-free on this platform. On success, zeros all
-// plain state, initializes every ring (slot sequences set to their slot index),
-// fills each RingBufferHeader from the actual layout, and stamps identity.
+// plain state, initializes every ring (slot sequences set to their slot index,
+// CRC fields zeroed), fills each RingBufferHeader from the actual layout,
+// stamps identity, and seeds integrity_word from the filled headers (T1.3).
 bool initialize(SharedRegion& region,
                 std::uint64_t slot_count = kDefaultSlotCount,
                 std::uint32_t slot_bytes = static_cast<std::uint32_t>(kDefaultSlotBytes));
@@ -122,5 +131,41 @@ bool verify_worker_ring(const SharedRegion& region, std::size_t worker_idx);
 // worker being taken over instead; this function will read their rings
 // mid-operation and may report false for perfectly healthy traffic.
 bool verify(const SharedRegion& region);
+
+// T1.3: crc32c over the per-worker header block (the raw ring_buffers[] words,
+// written once by initialize) followed by the *observed* global_seq as 8
+// little-endian bytes -- i.e., what a healthy quiescent region stores in
+// integrity_word. Observers and tests recompute it; identity is deliberately
+// not covered (verify_identity() already checks those words against
+// compiled-in constants, which is strictly stronger than a CRC for them).
+std::uint32_t compute_region_integrity(const SharedRegion& region);
+
+// T1.3: CAS-converging refresh of integrity_word from the current header and
+// seq state (see DEC-0005 #5). The hashed seq is re-read on every iteration,
+// so stored values are monotone in it and converge to a consistent word at
+// quiescence; under live traffic a transient mismatch is possible and one-way
+// (spurious for a live observer, never masking corruption) -- same caller
+// discipline as verify_consistent(). Called by push(); not needed elsewhere.
+void refresh_region_integrity(SharedRegion& region);
+
+// T1.3 commit path (region-level): publish `value` on worker idx's ring; on a
+// successful commit also advance global_seq and refresh integrity_word, so an
+// external observer can detect stale/corrupted headers without parsing slots.
+// Observability only: no protocol decision branches on the updated words.
+// Raw rings[i].try_push remains available but bypasses this accounting -- it
+// is low-level/test use; Phase 2 workers commit through this function.
+template <typename T>
+    requires std::is_trivially_copyable_v<T>
+bool push(SharedRegion& region, std::size_t worker_idx, const T& value) {
+    if (worker_idx >= kMaxWorkers) {
+        return false;
+    }
+    if (!region.rings[worker_idx].try_push(value)) {
+        return false;  // full or otherwise refused: no commit, no accounting
+    }
+    region.global_seq.fetch_add(1u, std::memory_order_relaxed);
+    refresh_region_integrity(region);
+    return true;
+}
 
 }  // namespace safety_crit::shared_memory
