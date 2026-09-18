@@ -147,6 +147,49 @@ CTest coverage; they must not replace the Phase 0 smoke test.
    compiler-observed behavior with both failing forms named for falsification.
    No production code changed; constraint enforcement itself was already
    correct.
+9. **Per-slot CRC lives in-cell at the end of the payload field; slot format
+   changes 56→52 payload bytes and `kRegionVersion` bumps 2→3.** Plan step 2
+   says "store per-slot CRC in each slot" but the frozen v2 layout (T1.2) has
+   no room for it: `Cell` is exactly seq(8)+payload[56] = 64B, and the
+   architecture rules require an explicit callout plus version bump for any
+   slot-format change. DEC-0005 (discussion D-2026-09-17-003) resolves this:
+   `crc` is appended to `Cell` at the end of the payload field -- layout v3:
+   `[0..8) sequence`, `[8..60) payload[52]`, `[60..64) crc`; the cell stays
+   exactly one 64-byte line and total region size is unchanged, so the version
+   bump is for format clarity (no silent relayout). `kDefaultSlotBytes` drops
+   to 52. The tag is a plain (non-atomic) `uint32_t` written under exclusive
+   slot ownership before the commit release-store -- T1.2's publish edge makes
+   it visible, and no extra atomic RMW or ordering change is needed.
+   `try_pop` validates the tag over the full payload field *before* copying
+   out; on mismatch the consumer never copies corrupted payload, releases with
+   the normal `ready(p + n)` marker (skipped slots re-arm), increments a new
+   per-ring 64-byte-aligned corruption counter (each corrupted position is
+   counted exactly once), and returns false indistinguishably from empty --
+   message loss at corrupted positions is by design (plan S3).
+10. **`integrity_word` is maintained by a region-level commit wrapper, not
+   inside `try_push`.** Plan step 3 says "update `integrity_word` on commit
+   paths"; a standalone ring's `try_push` has no access to `global_seq` or the
+   integrity word (the ring core stays standalone per DEC-0005). The update
+   therefore lives in a new region-level commit wrapper,
+   `push(SharedRegion&, worker_idx, value)`: ring `try_push`, then on success
+   `global_seq.fetch_add` + `refresh_region_integrity()`. The refresh is a
+   relaxed CAS-converging loop -- load the word, re-read `global_seq`, compute
+   the desired CRC; fast path when equal, CAS otherwise. Because `global_seq`
+   only increases, stored values are monotone in hashed sequence and the last
+   store at quiescence converges to exactly H(headers, final seq); under live
+   traffic a transient mismatch is possible and one-way (spurious mismatch for
+   live observers, never masked corruption), mirroring `verify_consistent()`'s
+   documented direction. `initialize()` seeds the word from the filled headers
+   + seq 0 so a fresh region is self-consistent before any commit.
+   Word definition: `crc32c(raw ring_buffers[] header block (kMaxWorkers x 64B)
+   || global_seq as 8 little-endian bytes)`; identity words are excluded
+   (already checked against compiled-in constants by `verify_identity`).
+   The CRC-32C implementation follows the plan's "hardware intrinsics where
+   available, table fallback": compile-time table default, `_mm_crc32_u8`
+   chain only when `__SSE4_2__` is defined; a differential test runs under
+   SSE4.2 builds, and known vectors (published check value plus two 52-byte
+   full-payload-field patterns cross-checked against an independent bitwise
+   implementation at analysis time) pin whichever path the build selected.
 
 ## Target Outcome
 
