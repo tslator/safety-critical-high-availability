@@ -2,10 +2,11 @@
 
 ## Current Status
 
-Phase 0 is complete. Phase 1 is in progress: the shared-memory layout, atomic
-worker flags, and lock-free ring buffer are implemented and covered by the
-current test and sanitizer matrix. CRC integrity, named shared-memory attach,
-and the Phase 1 exit gate remain planned work.
+Phase 0 is complete. Phase 1 is complete: the shared-memory layout, atomic
+worker flags, lock-free ring buffer, CRC-32C integrity, named shared-memory
+attach, and 1M-op MPMC stress verification are implemented and covered by the
+test, sanitizer, and clang-verify matrices. Workers, supervisors, and fault
+injection remain planned for later phases.
 
 See [project status](docs/STATUS.md) for the current phase table and next
 tasks. The [architecture](docs/ARCHITECTURE.md), [development guide](docs/DEVELOPMENT.md),
@@ -71,6 +72,10 @@ cmake -S . -B build/catch2 -G Ninja \
 cmake --build build/catch2 --parallel
 ctest --test-dir build/catch2 --output-on-failure
 ```
+
+The T1.5 stress tests run 1,000,000 operations per case by default in every
+configuration; `-DSAFETY_CRIT_STRESS_OPS=<n>` overrides the volume for
+constrained environments.
 
 Configure in disconnected mode for pre-populated dependency builds:
 

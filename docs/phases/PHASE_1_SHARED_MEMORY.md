@@ -208,6 +208,25 @@ CTest coverage; they must not replace the Phase 0 smoke test.
     `shm_attach.*` tests (lowercase suite so `ctest -R shm` matches under both
     frameworks), green in plain + ASan/UBSan + TSan (the fork case is compiled
     out under sanitizers; it runs in the plain build).
+12. **T1.5 stress accounting is exactly-once table verification, and runs the
+    full 1M ops in every configuration.** The plan asks only for "produced ==
+    consumed with per-message sequence verification"; the implementation
+    (`ring_buffer_stress.cpp`) verifies the stronger per-message property with
+    a per-`(producer, seq)` table of atomic bytes: MPMC claim semantics hand
+    each committed position to exactly one consumer, so every entry must end
+    at exactly 1 (0 = lost, >1 = duplicated), alongside
+    `pushed() == consumed()`, `corruption_count() == 0`, and — for the
+    quiescence case — `verify_consistent()` plus the cache-line separation
+    witnesses after the run. Termination uses a `done` flag published (release)
+    only after *all* producers join (an early true would let consumers exit
+    mid-push) and a drain-until-failed-pop-after-observe protocol; the table is
+    inspected only after every thread joins, since a claimer records after its
+    pop. Ops volume is 1,000,000 per case everywhere: the initially assumed
+    10–50x TSan cost did not materialize (full matrix TSan legs add ~7 s), so
+    no reduction was taken; a `SAFETY_CRIT_STRESS_OPS` cache-variable override
+    exists purely as an escape hatch for constrained environments. Gate G1.5:
+    44/44 in GoogleTest, Catch2, ASan+UBSan, TSan (both frameworks, full 1M),
+    and clang-verify — see NOTES.md "Gate: G1.5".
 
 ## Target Outcome
 
@@ -405,7 +424,9 @@ object in `/dev/shm`.
 
 ### Task T1.5 - Stress Tests and Phase Exit _(3-4 h)_
 
-**Record:** [T-0006](../tasks/T-0006-t1.5-stress-and-exit.md)
+**Record:** [T-0006](../tasks/T-0006-t1.5-stress-and-exit.md) · Completed
+2026-09-19 ([evidence](../../NOTES.md), deviation #12); hosted exit run
+35463176042 on commit 96e0d3f (10/10 jobs green).
 
 **Dependencies:** G1.3, G1.4.
 

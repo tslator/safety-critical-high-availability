@@ -230,3 +230,25 @@ Toolchain pin (clang-verify): Debian bookworm `clang-14 = 1:14.0.6-12` (src `llv
 |Hosted CI (.github/workflows/ci.yml: clang-verify NEW, native x2, sanitizers {ASan+UBSan, TSan} x2, container x2, AI guidance adapter drift)|PASS - run 35458929055 on commit 769c8a7 (2026-09-19): all ten jobs succeeded. clang-verify job log records `Debian clang version 14.0.6`, `clang-14 = 1:14.0.6-12 (src: llvm-toolchain-14 1:14.0.6-12)`, `clang-tidy-14 = 1:14.0.6-12`, and `100% tests passed, 0 tests failed out of 41` - matches the local pinned-image toolchain and results exactly|
 
 Notes: First Clang run surfaced three real diagnostic differences (the purpose of the pipeline): (1) `constexpr line_of()` test helpers used `reinterpret_cast`, default-error `-Winvalid-constexpr` under Clang - switched to `std::bit_cast` in ring_buffer_test.cpp, integrity_test.cpp, shared_region_layout_test.cpp (valid constexpr on both compilers; runtime behavior identical); (2) three local `using Ring8` aliases in ring_buffer_test.cpp shadowed the identical namespace-scope alias (Clang `-Wshadow` covers type aliases, GCC does not) - duplicates removed; (3) Clang does not inline `std::atomic<T>::is_lock_free()`, leaving an out-of-line `__atomic_is_lock_free` reference - `shared-memory/CMakeLists.txt` now links `atomic` PUBLIC under a Clang-only condition, keeping the gcc-primary link line byte-identical. Toolchain file sets compilers + C++20 cache vars only (DEC-0008 #4); warnings stay in `Warnings.cmake`. CI job uses SHA-pinned actions (`actions/checkout@11bd7190...`, `actions/upload-artifact@0b2256b8...` = v4.3.4) with workspace-level `contents: read`; CTest log uploaded on failure. Evidence table: docs/verification/clang-verification.md. Chain: D-2026-09-19-001 -> DEC-0008 -> T-0007 -> T-0008.
+
+---
+
+Gate: G1.5 (Phase 1 T1.5 - stress tests and phase exit; T-0006)
+Date: 2026-09-19
+Host: x86_64 Linux (glibc 2.39), distro-default `g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0`; clang legs in the pinned `safety-critical-ha:verify-clang-14` image
+
+Stress suite (new `shared-memory/tests/ring_buffer_stress.cpp`, 3 cases): 1P x 4C (1M msgs), 4P x 4C (1M msgs, 250k/producer), quiescence + cache-line witnesses after a saturated-and-drained run. Exactly-once accounting per (producer, seq) atomic-byte table; `pushed()==consumed`, `corruption_count()==0`, `verify_consistent()` at quiescence; methodology in deviation #12 (docs/phases/PHASE_1_SHARED_MEMORY.md). Volume 1M in every config (the assumed TSan cost did not materialize: legs add ~7 s; `SAFETY_CRIT_STRESS_OPS` override exists as an escape hatch only, unused by the gate and CI).
+
+|Command / Check|Result|
+|---|---|
+|Plan gate, fresh dir: `cmake -S . -B build/gtest -G Ninja -DSAFETY_CRIT_TEST_FRAMEWORK=GoogleTest && cmake --build ... && ctest --output-on-failure`|PASS - 44/44 (41 pre-existing + 3 stress), total 0.56 s|
+|Gate config 2: Catch2 (fresh dir)|PASS - 44/44, total 0.61 s|
+|Gate config 3: `-DSAFETY_CRIT_ENABLE_ASAN=ON -DSAFETY_CRIT_ENABLE_UBSAN=ON` (GoogleTest, fresh dir; ASAN_OPTIONS=detect_leaks=1, UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1)|PASS - 44/44, 1.16 s, no sanitizer diagnostics|
+|ASan+UBSan + Catch2 (CI matrix parity, fresh dir)|PASS - 44/44, 1.24 s, no diagnostics|
+|TSan + GoogleTest, FULL 1M ops (fresh dir, `setarch $(uname -m) --addr-no-randomize` for build and ctest, TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1)|PASS - 44/44, 6.64 s, no diagnostics (64k pilot first: 1.05 s; full volume then used)|
+|TSan + Catch2, FULL 1M ops (same harness)|PASS - 44/44, 7.60 s, no diagnostics|
+|clang-verify (pinned clang-14 image, fresh preset tree)|PASS - 44/44, 0.79 s; zero clang warnings on the new stress code|
+|`./scripts/sync-agent-guidance.sh --check`|PASS - adapters byte-identical (CORE.md untouched)|
+|Hosted CI / Phase Exit Gate (.github/workflows/ci.yml: native x2, sanitizers {ASan+UBSan, TSan} x2, clang-verify, container x2, AI guidance adapter drift)|PASS - run 35463176042 on commit 96e0d3f (2026-09-19): all ten jobs succeeded, stress suite green in every hosted configuration|
+
+Notes: T1.5 completes Phase 1: G1.1-G1.5 all green and the exit row (hosted CI on the Phase 1 merge commit) satisfied by 35463176042. Deviation #12 records the accounting methodology, the done-flag/drain termination protocol (drain must run concurrently with producers - the ring is bounded; `done` published only after all producers join), and the full-1M-under-TSan finding. No region-layout change (`kRegionVersion` stays 3); the layout is now frozen for Phase 2 per the Handoff section. Phase 2 (workers) is the next planned work; its plan sketch uses C++23/26 facilities and needs a reconciliation decision before canonical task records are opened.
