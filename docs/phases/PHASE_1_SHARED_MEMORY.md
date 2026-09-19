@@ -188,8 +188,26 @@ CTest coverage; they must not replace the Phase 0 smoke test.
    available, table fallback": compile-time table default, `_mm_crc32_u8`
    chain only when `__SSE4_2__` is defined; a differential test runs under
    SSE4.2 builds, and known vectors (published check value plus two 52-byte
-   full-payload-field patterns cross-checked against an independent bitwise
-   implementation at analysis time) pin whichever path the build selected.
+    full-payload-field patterns cross-checked against an independent bitwise
+    implementation at analysis time) pin whichever path the build selected.
+11. **The attach/detach API lives in a dedicated `shm_attach.hpp`, not
+    `shared_region.hpp`.** The plan's T1.4 deliverable named `shared_region.hpp`
+    for the create-or-open API, but that API requires POSIX system headers
+    (`<sys/mman.h>`, `<fcntl.h>`, `<unistd.h>`) which would then leak into every
+    consumer of the core layout header. They are confined to
+    `shm_attach.hpp`/`src/shm_attach.cpp`, which include `shared_region.hpp` (not
+    the reverse). DEC-0007 records the full attach semantics: `SharedRegionHandle`
+    as a move-only value-or-error handle (the C++20 stand-in for the forbidden
+    `std::expected`, no exceptions); create-vs-existing by object size (`fstat`)
+    then identity (`0` => fresh, `sizeof(SharedRegion)` => existing/verify-only,
+    any other nonzero size => `kSizeMismatch`; identity mismatch =>
+    `kStaleIdentity`); `munmap`-only detach with a test-only destructive
+    `destroy()` doing `shm_unlink` (never unlink while peers may be attached);
+    `MADV_DONTFORK` so forked children re-attach by name, `MADV_HUGEPAGE`
+    best-effort. No layout change, so `kRegionVersion` stays 3. Gate G1.4: six
+    `shm_attach.*` tests (lowercase suite so `ctest -R shm` matches under both
+    frameworks), green in plain + ASan/UBSan + TSan (the fork case is compiled
+    out under sanitizers; it runs in the plain build).
 
 ## Target Outcome
 
@@ -204,11 +222,13 @@ CTest coverage; they must not replace the Phase 0 smoke test.
 │   │   ├── atomic_flags.hpp
 │   │   ├── ring_buffer.hpp
 │   │   ├── shared_region.hpp
+│   │   ├── shm_attach.hpp                  # T1.4 (deviation #11)
 │   │   └── integrity.hpp
 │   ├── src/
 │   │   ├── ring_buffer.cpp
 │   │   ├── integrity.cpp
-│   │   └── shared_region.cpp
+│   │   ├── shared_region.cpp
+│   │   └── shm_attach.cpp                  # T1.4
 │   └── tests/
 │       ├── CMakeLists.txt
 │       ├── atomic_flags_test.cpp
@@ -347,14 +367,15 @@ Pass when all tests pass under ASan+UBSan with zero sanitizer diagnostics.
 
 ### Task T1.4 - Shared Memory Attach/Detach _(3-4 h)_
 
-**Record:** [T-0005](../tasks/T-0005-t1.4-attach-detach.md)
+**Record:** [T-0005](../tasks/T-0005-t1.4-attach-detach.md) · [DEC-0007](../decisions/0007-t1.4-attach-detach.md)
 
 **Dependencies:** G1.2 (integrity word read-only usage OK before T1.3).
 
 **Implementation steps**
 
-1. Implement `shared_region.hpp` attach API: create-or-open a named `/dev/shm`
-   object of the exact compiled-in region size, `mmap` + `madvise`
+1. Implement the attach API in `shm_attach.hpp` / `src/shm_attach.cpp` (deviation
+   #11: dedicated header, not `shared_region.hpp`): create-or-open a named
+   `/dev/shm` object of the exact compiled-in region size, `mmap` + `madvise`
    (`MADV_DONTFORK`, optional `MADV_HUGEPAGE`), construct in place via
    `initialize`; detect existing-vs-new by identity word and expected size.
 2. Detach: `munmap`, never truncate while peers may be attached. Provide a
