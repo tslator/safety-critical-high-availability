@@ -14,8 +14,12 @@ The high-level roadmap remains in
 - Link phase plans from [`docs/STATUS.md`](../STATUS.md) when they become
   active or are otherwise relevant to current work.
 - Record implementation decisions, assignable tasks, and validation evidence
-  in their dedicated directories under `docs/`; do not duplicate those records
-  in a phase plan unless the plan needs a concise cross-reference.
+  in their dedicated directories under `docs/` — assignable tasks live in the
+  single task registry at [`docs/tasks/`](../tasks/README.md). Keep the phase
+  plan focused on scope, dependencies, implementation steps, deliverables, and
+  verification gates, linking each task to its canonical registry record; do not
+  duplicate those records in a phase plan unless the plan needs a concise
+  cross-reference.
 
 ## Phase Plans
 

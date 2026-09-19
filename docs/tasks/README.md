@@ -1,11 +1,34 @@
-# Documentation Tasks
+# Tasks
 
-| ID | Title | Owner | Status | Priority | Depends On | Related |
-|---|---|---|---|---|---|---|
-| [T-0001](T-0001-documentation-index.md) | Add documentation index | Unassigned | Ready | Medium | None | [DEC-0003](../decisions/0003-documentation-discussion-records.md) |
-| [T-0002](T-0002-ai-guidance-implementation.md) | Implement AI guidance architecture | Unassigned | Complete | High | None | [DEC-0004](../decisions/0004-ai-guidance-architecture.md) |
+This is the single task registry for all work in the project — code, docs, and
+infra. Every task is reachable from here with an owner, status, priority,
+dependencies, and a link to its decision and evidence. Canonical IDs are
+sequential `T-####`; phase-scoped labels such as `T1.3` are aliases. See
+[DEC-0006](../decisions/0006-unified-task-registry.md) and
+[TASK_WORKFLOW.md](../ai-guidance/TASK_WORKFLOW.md).
+
+| ID | Phase | Title | Owner | Status | Priority | Depends On | Related |
+|---|---|---|---|---|---|---|---|
+| [T-0001](T-0001-documentation-index.md) | Meta | Add documentation index | Unassigned | Complete | Medium | None | [DEC-0003](../decisions/0003-documentation-discussion-records.md) |
+| [T-0002](T-0002-ai-guidance-implementation.md) | Meta | Implement AI guidance architecture | Unassigned | Complete | High | None | [DEC-0004](../decisions/0004-ai-guidance-architecture.md) |
+| [T-0003](T-0003-unify-record-process.md) | Meta | Unify record process on docs/tasks | Unassigned | Complete | High | [DEC-0006](../decisions/0006-unified-task-registry.md) | [D-2026-09-18-001](../reviews/2026-09-18-record-process-scope.md) |
+| [T-0004](T-0004-t1.3-crc-integrity.md) | Phase 1 | T1.3 — CRC integrity and corruption detection | Unassigned | Complete | High | G1.2 | [DEC-0005](../decisions/0005-t1.3-crc-integrity.md) |
+| [T-0005](T-0005-t1.4-attach-detach.md) | Phase 1 | T1.4 — shared memory attach/detach | Unassigned | Planned | High | G1.2 | [Phase 1 plan](../phases/PHASE_1_SHARED_MEMORY.md) |
+| [T-0006](T-0006-t1.5-stress-and-exit.md) | Phase 1 | T1.5 — stress tests and phase exit | Unassigned | Blocked | High | T-0004, T-0005 | [Phase 1 plan](../phases/PHASE_1_SHARED_MEMORY.md) |
+| T1.1 | Phase 1 | Shared region layout and atomic flags _(roll-up)_ | — | Complete | — | — | [Phase 1 plan](../phases/PHASE_1_SHARED_MEMORY.md) |
+| T1.2 | Phase 1 | Lock-free ring buffer _(roll-up)_ | — | Complete | — | — | [Phase 1 plan](../phases/PHASE_1_SHARED_MEMORY.md), [evidence](../evidence/phase-1.md) |
+| Phase 0 | Phase 0 | Container and tooling (0.1–0.6) _(roll-up)_ | — | Complete | — | — | [Phase 0 plan](../phases/PHASE_0_CONTAINER_AND_TOOLING.md) |
 
 ## Task Rules
 
-Tasks must have an owner, status, priority, dependencies, scope, and acceptance
-criteria before assignment. Closed tasks must link to validation evidence.
+- Tasks must have an owner, status, priority, dependencies, scope, and
+  acceptance criteria before assignment. Closed tasks must link to validation
+  evidence.
+- Canonical IDs are sequential `T-####`; never reuse an ID. A phase-scoped label
+  (`T1.3`) is an alias that links to the canonical record.
+- A full per-task file is required for any task that has an authorizing decision
+  or is not yet complete. Completed phase tasks with no decision of their own may
+  be a **roll-up** row (shown above) that links to the phase plan instead.
+- Status vocabulary: `Planned | Ready | In Progress | In Review | Complete |
+  Blocked`. `docs/STATUS.md` is a human roll-up briefing; this registry is the
+  source of truth for task status.

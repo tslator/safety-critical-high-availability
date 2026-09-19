@@ -310,6 +310,8 @@ Pass when all T1.1 + T1.2 tests pass under both frameworks with the default
 
 ### Task T1.3 - CRC Integrity and Corruption Detection _(3-4 h)_
 
+**Record:** [T-0004](../tasks/T-0004-t1.3-crc-integrity.md)
+
 **Dependencies:** G1.2.
 
 **Implementation steps**
@@ -345,6 +347,8 @@ Pass when all tests pass under ASan+UBSan with zero sanitizer diagnostics.
 
 ### Task T1.4 - Shared Memory Attach/Detach _(3-4 h)_
 
+**Record:** [T-0005](../tasks/T-0005-t1.4-attach-detach.md)
+
 **Dependencies:** G1.2 (integrity word read-only usage OK before T1.3).
 
 **Implementation steps**
@@ -379,6 +383,8 @@ object in `/dev/shm`.
 ---
 
 ### Task T1.5 - Stress Tests and Phase Exit _(3-4 h)_
+
+**Record:** [T-0006](../tasks/T-0006-t1.5-stress-and-exit.md)
 
 **Dependencies:** G1.3, G1.4.
 
