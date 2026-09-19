@@ -1,0 +1,41 @@
+# T-0009: Phase 2 T2.1 — Worker Core
+
+- Status: Planned
+- Owner: Unassigned
+- Priority: High
+- Depends on: Phase 1 exit (G1.1–G1.5)
+- Phase: Phase 2
+- Phase label: T2.1
+- Related decision: [DEC-0009](../decisions/0009-phase2-worker-runtime.md)
+
+> Canonical narrative and gate live in
+> [Phase 2 plan T2.1](../phases/PHASE_2_WORKERS.md).
+
+## Scope
+
+Create the `safety_crit::workers` library: worker config, `OVERRUN` status
+bit, deterministic workload simulation, and the C++20 ranges processing
+pipeline — with tests.
+
+## Deliverables
+
+- `workers/` static library wired into the build (warnings, sanitizers, test
+  adapter); ownership rows in `ARCHITECTURE.md` / `ARCHITECTURE_RULES.md`.
+- `worker_config.hpp` (id/role/tick interval/CPU budget/seed derivation).
+- `workload.hpp`: splitmix64 sensor sim (per-(worker, tick) determinism) +
+  ranges pipeline with manual-loop equivalence witness.
+- `OVERRUN` bit in `WorkerStatusFlag` with flag-test coverage.
+
+## Acceptance Criteria
+
+- Core tests green in GoogleTest, Catch2, and ASan+UBSan; zero warnings.
+- Determinism: identical (worker, tick) → byte-identical processed output.
+- Pipeline output identical to the manual loop over the test corpus.
+
+## Validation
+
+Gate G2.1 (see phase plan). Record in `NOTES.md`.
+
+## Completion Notes
+
+(To be recorded at completion.)

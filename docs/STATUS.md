@@ -1,6 +1,6 @@
 # Project Status
 
-- Current phase: Phase 1 complete (G1.1–G1.5 + exit gate) — Phase 2 planning next
+- Current phase: Phase 2 planned (DEC-0009) — implementation starts with T-0009
 - Current gate: G1.5 complete (Phase 1 exit, hosted run 35463176042)
 - Last updated: 2026-09-19
 
@@ -18,9 +18,9 @@
 
 ## Next Work
 
-1. Phase 2 (workers) kickoff: reconciliation decision for the plan sketch's
-   C++23/26 facilities (`std::generator`, `std::this_thread::pause`) against
-   the C++20 project, then canonical task records (T-0009+).
+1. Implement Phase 2 per [DEC-0009](decisions/0009-phase2-worker-runtime.md)
+   and the [Phase 2 plan](phases/PHASE_2_WORKERS.md): T-0009 (worker core),
+   T-0010 (work loop/signals/deadlines), T-0011 (CLI + integration + exit).
 2. Optional tooling follow-ups from DEC-0008: `clang-static-analysis`
    (advisory), `clang-sanitizers` presets, `COPY_ONLY` dev-warning cleanup.
 
