@@ -18,6 +18,20 @@ safety_crit_apply_warnings(ring_buffer_test)
 safety_crit_apply_sanitizers(ring_buffer_test)
 safety_crit_register_tests(ring_buffer_test)
 
+# T1.5: stress tests (>= 1M ops, zero loss/duplication accounting). The
+# SAFETY_CRIT_STRESS_OPS cache variable overrides the built-in 1M default for
+# constrained environments only (all standard matrix legs, TSan included, run
+# the full 1M; deviation #12 in docs/phases/PHASE_1_SHARED_MEMORY.md).
+add_executable(ring_buffer_stress_test ring_buffer_stress.cpp)
+target_link_libraries(ring_buffer_stress_test PRIVATE safety_crit::shared_memory)
+safety_crit_apply_warnings(ring_buffer_stress_test)
+safety_crit_apply_sanitizers(ring_buffer_stress_test)
+if(SAFETY_CRIT_STRESS_OPS)
+    target_compile_definitions(ring_buffer_stress_test PRIVATE
+        SAFETY_CRIT_STRESS_OPS=${SAFETY_CRIT_STRESS_OPS})
+endif()
+safety_crit_register_tests(ring_buffer_stress_test)
+
 # T1.3: CRC integrity (known vectors, corruption skip path, region word).
 add_executable(integrity_test integrity_test.cpp)
 target_link_libraries(integrity_test PRIVATE safety_crit::shared_memory)
