@@ -102,6 +102,38 @@ jobs:
           docker build --pull --tag safety-critical-ha:phase0 .
           docker run --rm safety-critical-ha:phase0 --version
 
+  # Supplementary verification (DEC-0008, T-0008): clean build + full ctest
+  # with clang-14 from the digest-pinned verification container, sharing
+  # libc/libstdc++ with the gcc-primary baseline. Verification evidence only;
+  # not system validation and not a CORE.md Tier-1 safety gate.
+  clang-verify:
+    name: Clang verification (clang-14, pinned container)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Build pinned clang-14 verification image
+        run: |
+          docker build -f containers/verification/Dockerfile.clang \
+            --tag safety-critical-ha:verify-clang-14 .
+      - name: Configure, build, and test with clang-verify preset
+        run: |
+          docker run --rm --workdir /workspace \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            safety-critical-ha:verify-clang-14 \
+            bash -o pipefail -c "
+              cmake --preset clang-verify &&
+              cmake --build --preset clang-verify --parallel &&
+              ctest --preset clang-verify 2>&1 | tee /workspace/build/clang-verify-ctest.log
+            "
+      - name: Upload CTest log on failure
+        if: failure()
+        uses: actions/upload-artifact@0b2256b8c012f0828dc542b3febcab082c67f72b # v4.3.4
+        with:
+          name: clang-verify-ctest-log
+          path: build/clang-verify-ctest.log
+          if-no-files-found: warn
+
   docker-compose-smoke:
     name: Compose runtime smoke
     runs-on: ubuntu-latest

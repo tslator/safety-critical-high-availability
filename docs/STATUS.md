@@ -2,13 +2,14 @@
 
 - Current phase: Phase 1 - Shared Memory & Lock-Free Ring Buffers
 - Current gate: G1.4 complete
-- Last updated: 2026-09-18
+- Last updated: 2026-09-19
 
 ## Phase Status
 
 | Work | Status | Notes |
 |---|---|---|
 | Phase 0: container and tooling | Complete | Native, container, Compose, and CI baseline established |
+| T-0008: clang-verify pipeline | In Review | Supplementary Clang build + ctest in pinned container; local validation green, awaiting hosted CI run |
 | T1.1: shared region layout and atomic flags | Complete | GoogleTest and Catch2 coverage |
 | T1.2: lock-free ring buffer | Complete | MPMC protocol, scoped verification, sanitizer matrix |
 | T1.3: CRC integrity and corruption detection | Complete | In-cell CRC-32C (layout v3), skip-and-count corruption path, region integrity word |

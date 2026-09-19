@@ -1,7 +1,7 @@
 # T-0008: Clang Supplementary Verification Pipeline (clang-verify)
 
-- Status: Ready
-- Owner: Unassigned
+- Status: In Review (implementation + local validation done; awaiting hosted CI run)
+- Owner: AI agent (opencode)
 - Priority: Medium
 - Depends on: [T-0007](T-0007-pin-primary-baseline.md)
 - Phase: Phase 0 (tooling)
@@ -33,9 +33,28 @@ evidence. This increment is build + ctest only (no clang-tidy, no sanitizers).
 
 ## Validation
 
-Record in `NOTES.md` / `docs/evidence/`; DEC-0008 → T-0008 → evidence chain.
+Recorded 2026-09-19 in [`NOTES.md`](../../NOTES.md) (section "T-0008") and
+[`docs/verification/clang-verification.md`](../verification/clang-verification.md)
+(evidence table): image built from the digest-pinned Dockerfile;
+`cmake --preset clang-verify` configures with `CMAKE_CXX_COMPILER_ID=Clang`;
+build clean (zero first-party warnings) and 41/41 ctest pass in the image;
+gcc-primary regression green (GoogleTest/Catch2/ASan+UBSan, 41/41 each, link
+line unchanged); `sync-agent-guidance.sh --check` exits 0. Hosted CI run ID
+to be appended after push. Chain: D-2026-09-19-001 → DEC-0008 → T-0007 →
+T-0008 → evidence.
 
 ## Completion Notes
+
+- Scope deviation (in service of AC "build passes"): the first Clang run
+  surfaced three genuine diagnostic differences fixed in first-party sources
+  — `std::bit_cast` for the `constexpr line_of()` test helpers
+  (`-Winvalid-constexpr`), removal of shadowing local `Ring8` aliases
+  (`-Wshadow`), and a Clang-only `target_link_libraries(... atomic)` in
+  `shared-memory/CMakeLists.txt` (Clang emits an out-of-line
+  `__atomic_is_lock_free` call; the gcc-primary link line is unchanged).
+  Details in NOTES.md and the verification doc.
+- `clang-tidy-14` is installed in the verification image per DEC-0008 #2 but
+  unused by the preset, reserved for `clang-static-analysis`.
 
 Deferred to later tasks: `clang-static-analysis` (advisory), `clang-sanitizers`,
 libc++ independence, any CORE.md gate use (e.g. clang-tidy for hot-path rules).

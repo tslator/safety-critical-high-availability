@@ -1,0 +1,36 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "clang-verify",
+      "displayName": "Clang verification build (clang-14)",
+      "description": "Supplementary clean build + ctest with clang-14 from the pinned verification container (DEC-0008). Verification evidence only, not system validation.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/clang-verify",
+      "toolchainFile": "${sourceDir}/CMake/toolchains/clang-verify.cmake",
+      "cacheVariables": {
+        "SAFETY_CRIT_BUILD_TESTING": "ON",
+        "SAFETY_CRIT_TEST_FRAMEWORK": "GoogleTest"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "clang-verify",
+      "configurePreset": "clang-verify"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "clang-verify",
+      "configurePreset": "clang-verify",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": true
+      }
+    }
+  ]
+}

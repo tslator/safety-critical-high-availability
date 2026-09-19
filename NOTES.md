@@ -208,3 +208,25 @@ Recorded primary compiler (gcc-primary): package `g++-12` = 12.2.0-14+deb12u1, s
 |Hosted CI (.github/workflows/ci.yml: native x2, sanitizers {ASan+UBSan, TSan} x2, container x2, AI guidance adapter drift)|PASS - run 35450545373 on commit db73b6a (2026-09-19): all nine jobs succeeded. New "Report primary compiler version" steps logged `g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0` in all four native/sanitizer jobs; container/compose jobs logged `Compiler: GNU 12.2.0` - CI matches the recorded baseline, and the container-vs-host/CI major divergence is documented (Dockerfile comment, docs/DEVELOPMENT.md "Compiler baseline")|
 
 Notes: T-0007 changes the Dockerfile builder stage (explicit `g++-12` package + `-DCMAKE_CXX_COMPILER=g++-12` + build-log version report), adds CI compiler-report steps, and documents the per-environment compiler baseline in README.md and docs/DEVELOPMENT.md. No source, CMake logic, or warning-policy changes. After this, container/CI results are attributable per DEC-0008 #7, unblocking T-0008 clang-vs-primary comparisons.
+
+---
+
+Gate: T-0008 (Clang supplementary verification pipeline - clang-verify)
+Date: 2026-09-19
+Host: x86_64 Linux, Docker Engine 29.6.2 (no host clang; verification runs in the pinned container per DEC-0008 #2)
+
+Toolchain pin (clang-verify): Debian bookworm `clang-14 = 1:14.0.6-12` (src `llvm-toolchain-14`, deb.debian.org bookworm/main) - `clang version 14.0.6`; `clang-tidy-14 = 1:14.0.6-12` (installed for the deferred clang-static-analysis task only); `cmake = 3.25.1-1`; `ninja-build = 1.11.1-2~deb12u1`. Base: `debian:bookworm@sha256:813017f3d62be4b5891a7acca6a01bdcd4b8513daa81b1ab99d3a50385b26931` (same pin as the primary image, so libc/libstdc++ match and only the compiler differs). Image: `safety-critical-ha:verify-clang-14` from `containers/verification/Dockerfile.clang`; identity echoed on every image build.
+
+|Command / Check|Result|
+|---|---|
+|`docker build -f containers/verification/Dockerfile.clang --tag safety-critical-ha:verify-clang-14 .`|PASS - exit 0; build log records `Debian clang version 14.0.6` and the `dpkg-query` package/source report above|
+|`cmake --list-presets` (host, CMake 3.28.3; also parsed by in-image CMake 3.25.1)|PASS - configure/build/test preset `clang-verify` listed (version 3, root CMakePresets.json)|
+|`cmake --preset clang-verify` in image|PASS - `CMAKE_CXX_COMPILER:STRING=/usr/bin/clang++-14`, `CMAKE_CXX_COMPILER_ID "Clang"` (AC #1)|
+|`cmake --build --preset clang-verify --parallel` in image|PASS (after fixes below) - all 26 targets, zero warnings on first-party code under `-Wall -Wextra -Wpedantic -Wconversion -Wshadow`|
+|`ctest --preset clang-verify` in image|PASS - 100% tests passed, 0 failed out of 41|
+|CI-form pipeline (`bash -o pipefail -c` with `tee /workspace/build/clang-verify-ctest.log`, exactly the CI job steps)|PASS - exit 0, CTest log written for the on-failure artifact step|
+|gcc-primary regression after source fixes (host fresh dirs, distro g++ 13.3.0): GoogleTest / Catch2 / ASan+UBSan|PASS - 41/41 each, zero compile warnings; primary link line unchanged (`libatomic` links only when `CMAKE_CXX_COMPILER_ID MATCHES "Clang"`)|
+|`./scripts/sync-agent-guidance.sh --check`|PASS - adapters byte-identical (CORE.md untouched)|
+|Hosted CI `clang-verify` job|Pending first hosted run - append run ID, commit, and job-log toolchain versions here and in docs/verification/clang-verification.md after push|
+
+Notes: First Clang run surfaced three real diagnostic differences (the purpose of the pipeline): (1) `constexpr line_of()` test helpers used `reinterpret_cast`, default-error `-Winvalid-constexpr` under Clang - switched to `std::bit_cast` in ring_buffer_test.cpp, integrity_test.cpp, shared_region_layout_test.cpp (valid constexpr on both compilers; runtime behavior identical); (2) three local `using Ring8` aliases in ring_buffer_test.cpp shadowed the identical namespace-scope alias (Clang `-Wshadow` covers type aliases, GCC does not) - duplicates removed; (3) Clang does not inline `std::atomic<T>::is_lock_free()`, leaving an out-of-line `__atomic_is_lock_free` reference - `shared-memory/CMakeLists.txt` now links `atomic` PUBLIC under a Clang-only condition, keeping the gcc-primary link line byte-identical. Toolchain file sets compilers + C++20 cache vars only (DEC-0008 #4); warnings stay in `Warnings.cmake`. CI job uses SHA-pinned actions (`actions/checkout@11bd7190...`, `actions/upload-artifact@0b2256b8...` = v4.3.4) with workspace-level `contents: read`; CTest log uploaded on failure. Evidence table: docs/verification/clang-verification.md. Chain: D-2026-09-19-001 -> DEC-0008 -> T-0007 -> T-0008.

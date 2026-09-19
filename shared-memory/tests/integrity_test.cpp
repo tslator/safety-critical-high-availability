@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <barrier>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -17,7 +18,9 @@ namespace {
 using namespace safety_crit::shared_memory;
 
 constexpr std::uintptr_t line_of(const void* p) {
-    return reinterpret_cast<std::uintptr_t>(p) / 64u;
+    // std::bit_cast (not reinterpret_cast) keeps this a valid constexpr
+    // function under Clang's default-error -Winvalid-constexpr.
+    return std::bit_cast<std::uintptr_t>(p) / 64u;
 }
 
 // Small rings: force backpressure and wrap-arounds in the corruption tests.

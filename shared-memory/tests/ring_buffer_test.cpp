@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <barrier>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <thread>
@@ -16,7 +17,9 @@ namespace {
 using namespace safety_crit::shared_memory;
 
 constexpr std::uintptr_t line_of(const void* p) {
-    return reinterpret_cast<std::uintptr_t>(p) / 64u;
+    // std::bit_cast (not reinterpret_cast) keeps this a valid constexpr
+    // function under Clang's default-error -Winvalid-constexpr.
+    return std::bit_cast<std::uintptr_t>(p) / 64u;
 }
 
 // Small ring: forces backpressure and many wrap-arounds in the concurrency
@@ -186,7 +189,6 @@ SAFETY_CRIT_TEST_CASE(RingBufferProtocol, FutureLapCorruptionRejectedByWindowChe
     // Regression test for the review finding: a well-formed counter advanced
     // into a future lap on a non-minimal slot leaves every derived minimum
     // untouched, so a minima-only cross-check would accept it.
-    using Ring8 = LockFreeRingBuffer<8, 16>;
     Ring8 ring;
     SAFETY_CRIT_ASSERT(ring.initialize());
 
@@ -221,7 +223,6 @@ SAFETY_CRIT_TEST_CASE(RingBufferProtocol, FutureLapCorruptionRejectedByWindowChe
 SAFETY_CRIT_TEST_CASE(RingBufferProtocol, WindowCheckAcceptsQuiescentBoundaries) {
     // The per-slot window check must not over-reject legal quiescent states;
     // the full ring (tail - head == SlotCount) is the boundary case.
-    using Ring8 = LockFreeRingBuffer<8, 16>;
     Ring8 ring;
     SAFETY_CRIT_ASSERT(ring.initialize());
     SAFETY_CRIT_ASSERT(ring.verify_consistent());  // empty
@@ -252,7 +253,6 @@ SAFETY_CRIT_TEST_CASE(RingBufferProtocol, InFlightClaimReadsAsInconsistentUntilC
     // consistency. Constructed by hand: tail_/head_ advanced exactly as an
     // in-flight claim would leave them, with the slot's sequence store still
     // pending.
-    using Ring8 = LockFreeRingBuffer<8, 16>;
     Ring8 ring;
     SAFETY_CRIT_ASSERT(ring.initialize());
 

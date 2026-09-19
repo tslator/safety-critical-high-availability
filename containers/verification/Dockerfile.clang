@@ -1,0 +1,60 @@
+# syntax=docker/dockerfile:1.7
+
+# clang-verify verification toolchain (DEC-0008, T-0008).
+# Tag: safety-critical-ha:verify-clang-14
+#   docker build -f containers/verification/Dockerfile.clang -t safety-critical-ha:verify-clang-14 .
+#
+# Role: supplementary verification only (clean build + ctest via the
+# `clang-verify` CMake preset). This is verification evidence, not system
+# validation or safety certification (DEC-0008 #6).
+#
+# Reproducibility note:
+# Base digest captured with (same pin as the primary Dockerfile, so both
+# toolchains share libc/libstdc++ and only the compiler differs):
+#   docker pull --platform linux/amd64 debian:bookworm
+#   docker image inspect --format '{{index .RepoDigests 0}}' debian:bookworm
+# NOTE: Be mindful of the index used with RepoDigests, as it may not be the
+# same as the digest used for the pull command.
+# arm64 is not supported at this time (matches the primary image policy).
+#
+# Toolchain pin (DEC-0008 #2): Debian bookworm's supported Clang major,
+# `clang-14` from deb.debian.org bookworm/main. Newer Clang requires the
+# LLVM APT repository and is out of scope (independence, not recency).
+# Rebuild rule (DEC-0008 maintenance): re-record the package names, versions,
+# source, and --version output below on every toolchain update.
+# Exact versions at the most recent validated rebuild (see NOTES.md, section
+# "T-0008"):
+#   clang-14 = 1:14.0.6-12 (src llvm-toolchain-14) / clang version 14.0.6
+#   clang-tidy-14 = 1:14.0.6-12 (installed for the deferred
+#   clang-static-analysis task, DEC-0008 #2/#3; not used by the clang-verify
+#   preset)
+#   cmake = 3.25.1-1, ninja-build = 1.11.1-2~deb12u1
+
+FROM --platform=linux/amd64 debian:bookworm@sha256:813017f3d62be4b5891a7acca6a01bdcd4b8513daa81b1ab99d3a50385b26931 AS verify
+
+ENV DEBIAN_FRONTEND=noninteractive
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        clang-14 \
+        clang-tidy-14 \
+        cmake \
+        ninja-build \
+        git \
+        ca-certificates \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Toolchain identity report (evidence for every image build; DEC-0008
+# maintenance rule). dpkg-query records exact package versions + source.
+RUN clang-14 --version \
+    && clang++-14 --version \
+    && clang-tidy-14 --version \
+    && cmake --version \
+    && ninja --version \
+    && dpkg-query -W -f='${Package} = ${Version} (src: ${source:Package} ${source:Version})\n' \
+        clang-14 clang-tidy-14 cmake ninja-build
+
+WORKDIR /workspace
+CMD ["/bin/bash"]

@@ -118,6 +118,22 @@ docker image inspect safety-critical-ha:phase0 \
 	--format '{{json .Config.Entrypoint}}'
 ```
 
+Run the supplementary Clang verification (`clang-verify`): clean build + full
+CTest with `clang-14` in a digest-pinned verification container
+([DEC-0008](docs/decisions/0008-clang-supplementary-verification.md)). This is
+verification evidence, not system validation; the `gcc-primary` build stays
+the baseline:
+
+```bash
+docker build -f containers/verification/Dockerfile.clang \
+	-t safety-critical-ha:verify-clang-14 .
+docker run --rm --workdir /workspace -v "$PWD:/workspace" \
+	safety-critical-ha:verify-clang-14 \
+	bash -c "cmake --preset clang-verify &&
+	         cmake --build --preset clang-verify --parallel &&
+	         ctest --preset clang-verify"
+```
+
 Validate and exercise the default Compose stack:
 
 ```bash

@@ -53,6 +53,32 @@ docker build --pull --tag safety-critical-ha:phase0 .
 docker run --rm safety-critical-ha:phase0 --version   # prints "Compiler: GNU ..."
 ```
 
+## Clang Verification (clang-verify)
+
+Supplementary verification with an independent compiler
+([DEC-0008](decisions/0008-clang-supplementary-verification.md)): a clean
+build + full CTest run with `clang-14` from the digest-pinned verification
+container. A successful run is verification evidence, not system validation;
+the `gcc-primary` container build remains the baseline artifact.
+
+```bash
+docker build -f containers/verification/Dockerfile.clang \
+  -t safety-critical-ha:verify-clang-14 .
+docker run --rm --workdir /workspace -v "$PWD:/workspace" \
+  safety-critical-ha:verify-clang-14 \
+  bash -o pipefail -c "
+    cmake --preset clang-verify &&
+    cmake --build --preset clang-verify --parallel &&
+    ctest --preset clang-verify
+  "
+```
+
+The `clang-verify` root CMake presets (toolchain file
+`CMake/toolchains/clang-verify.cmake`, separate `build/clang-verify` tree)
+also work directly on a host that has `clang-14` installed. See
+[clang verification](verification/clang-verification.md) for role framing,
+the evidence table, and maintenance rules.
+
 ## Container Smoke Test
 
 ```bash
