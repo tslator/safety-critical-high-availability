@@ -68,7 +68,7 @@ section "T-0008".
 | Test | `ctest --preset clang-verify` in image | PASS - 100% tests passed, 0 failed out of 41 |
 | gcc-primary regression | Host fresh dirs: GoogleTest, Catch2, ASan+UBSan | PASS - 41/41 each, zero compile warnings (GCC link line unchanged: `libatomic` links only under `CMAKE_CXX_COMPILER_ID MATCHES "Clang"`) |
 | Adapter drift | `./scripts/sync-agent-guidance.sh --check` | PASS - adapters byte-identical (CORE.md untouched) |
-| Hosted CI `clang-verify` job | `.github/workflows/ci.yml` | Pending first hosted run (record run ID here and in NOTES.md after push) |
+| Hosted CI `clang-verify` job | run 35458929055 on commit `769c8a7` (2026-09-19) | PASS - all 10 jobs green; job log: `Debian clang version 14.0.6`, `clang-14 = 1:14.0.6-12 (src: llvm-toolchain-14 1:14.0.6-12)`, `100% tests passed, 0 tests failed out of 41` |
 
 ### Diagnostic differences surfaced (the point of the pipeline)
 
@@ -88,10 +88,14 @@ First run under Clang found three real issues, all fixed without touching
    `atomic` PUBLIC only when the compiler is Clang, so the primary link line
    is unchanged.
 
-### 2026-09-19 (hosted CI)
+### 2026-09-19 (hosted CI, first run)
 
-(To be appended after the first hosted run of the `clang-verify` job: run ID,
-commit, job result, toolchain versions from the job log.)
+Run 35458929055 on commit `769c8a7`: all ten jobs succeeded, including the
+new `clang-verify` job. Its image-build step logged the toolchain identity
+(`Debian clang version 14.0.6`; `clang-14 = 1:14.0.6-12 (src:
+llvm-toolchain-14 1:14.0.6-12)`; `clang-tidy-14 = 1:14.0.6-12`) matching the
+local pinned image, and the preset step reported `100% tests passed, 0 tests
+failed out of 41`.
 
 ## Maintenance
 

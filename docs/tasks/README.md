@@ -16,7 +16,7 @@ sequential `T-####`; phase-scoped labels such as `T1.3` are aliases. See
 | [T-0005](T-0005-t1.4-attach-detach.md) | Phase 1 | T1.4 — shared memory attach/detach | Unassigned | Complete | High | G1.2 | [DEC-0007](../decisions/0007-t1.4-attach-detach.md) |
 | [T-0006](T-0006-t1.5-stress-and-exit.md) | Phase 1 | T1.5 — stress tests and phase exit | Unassigned | Ready | High | T-0004, T-0005 | [Phase 1 plan](../phases/PHASE_1_SHARED_MEMORY.md) |
 | [T-0007](T-0007-pin-primary-baseline.md) | Phase 0 | Pin the primary build compiler | AI agent (opencode) | Complete | High | None | [DEC-0008](../decisions/0008-clang-supplementary-verification.md), [evidence](../../NOTES.md) |
-| [T-0008](T-0008-clang-verify-pipeline.md) | Phase 0 | Clang supplementary verification pipeline | AI agent (opencode) | In Review | Medium | T-0007 | [DEC-0008](../decisions/0008-clang-supplementary-verification.md), [evidence](../verification/clang-verification.md) |
+| [T-0008](T-0008-clang-verify-pipeline.md) | Phase 0 | Clang supplementary verification pipeline | AI agent (opencode) | Complete | Medium | T-0007 | [DEC-0008](../decisions/0008-clang-supplementary-verification.md), [evidence](../verification/clang-verification.md) |
 | T1.1 | Phase 1 | Shared region layout and atomic flags _(roll-up)_ | — | Complete | — | — | [Phase 1 plan](../phases/PHASE_1_SHARED_MEMORY.md) |
 | T1.2 | Phase 1 | Lock-free ring buffer _(roll-up)_ | — | Complete | — | — | [Phase 1 plan](../phases/PHASE_1_SHARED_MEMORY.md), [evidence](../evidence/phase-1.md) |
 | Phase 0 | Phase 0 | Container and tooling (0.1–0.6) _(roll-up)_ | — | Complete | — | — | [Phase 0 plan](../phases/PHASE_0_CONTAINER_AND_TOOLING.md) |

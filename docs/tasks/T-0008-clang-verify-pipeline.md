@@ -1,6 +1,6 @@
 # T-0008: Clang Supplementary Verification Pipeline (clang-verify)
 
-- Status: In Review (implementation + local validation done; awaiting hosted CI run)
+- Status: Complete
 - Owner: AI agent (opencode)
 - Priority: Medium
 - Depends on: [T-0007](T-0007-pin-primary-baseline.md)
@@ -39,9 +39,10 @@ Recorded 2026-09-19 in [`NOTES.md`](../../NOTES.md) (section "T-0008") and
 `cmake --preset clang-verify` configures with `CMAKE_CXX_COMPILER_ID=Clang`;
 build clean (zero first-party warnings) and 41/41 ctest pass in the image;
 gcc-primary regression green (GoogleTest/Catch2/ASan+UBSan, 41/41 each, link
-line unchanged); `sync-agent-guidance.sh --check` exits 0. Hosted CI run ID
-to be appended after push. Chain: D-2026-09-19-001 → DEC-0008 → T-0007 →
-T-0008 → evidence.
+line unchanged); `sync-agent-guidance.sh --check` exits 0. Hosted CI run 35458929055 on commit
+769c8a7 (2026-09-19): all ten jobs succeeded, `clang-verify` job green with
+toolchain identity matching the local pinned image.
+Chain: D-2026-09-19-001 → DEC-0008 → T-0007 → T-0008 → evidence.
 
 ## Completion Notes
 
