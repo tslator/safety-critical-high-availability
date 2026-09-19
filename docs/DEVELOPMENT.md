@@ -16,6 +16,43 @@ The sanitizer matrix uses the same framework configurations with ASan+UBSan
 or TSan enabled. See [CI](../.github/workflows/ci.yml) for the authoritative
 workflow commands.
 
+## Compiler Baseline
+
+The primary ("gcc-primary") build compiler is the container image's compiler:
+Debian bookworm's supported default GCC 12, installed explicitly as the
+versioned `g++-12` package (source: `deb.debian.org` `bookworm/main`) and
+selected with `-DCMAKE_CXX_COMPILER=g++-12` in the Dockerfile builder stage.
+The exact package version and `g++-12 --version` output are recorded in the
+Dockerfile comment and in the `NOTES.md` "T-0007" section at each validated
+rebuild ([DEC-0008](decisions/0008-clang-supplementary-verification.md)
+maintenance rule).
+
+Debian bookworm and `bookworm-backports` ship no `gcc-13`/`g++-13` package
+(verified 2026-09-19). Pinning GCC 13 would require a third-party toolchain
+repository, which the Phase 0 toolchain policy
+([PHASE_0_CONTAINER_AND_TOOLING.md](phases/PHASE_0_CONTAINER_AND_TOOLING.md),
+"Toolchain Decision") declines to adopt.
+
+Reporting per environment:
+
+| Environment | Compiler | How it is reported |
+|---|---|---|
+| Container image (baseline artifact) | `g++-12` (Debian 12.2.0-14+deb12u1) 12.2.0 | `docker run --rm safety-critical-ha:phase0 --version` prints `Compiler: GNU ...`; the builder stage logs `g++-12 --version` |
+| Host (reference dev host) | distro-default `g++` (Ubuntu 13.3.0) | `g++ --version` |
+| CI native/sanitizer jobs | distro-default `g++` on `ubuntu-latest` (13.x) | the "Report primary compiler version" step prints `g++ --version` on every run |
+
+The host/CI-versus-container major-version divergence is explicit and
+intentional: the digest-pinned container with its explicit compiler package
+is the reproducible baseline artifact, while host and CI iterate on their
+distro-default compilers. Per [DEC-0008](decisions/0008-clang-supplementary-verification.md)
+§7, results count as attributable baseline evidence once the compiler is
+recorded as above.
+
+```bash
+docker build --pull --tag safety-critical-ha:phase0 .
+docker run --rm safety-critical-ha:phase0 --version   # prints "Compiler: GNU ..."
+```
+
 ## Container Smoke Test
 
 ```bash

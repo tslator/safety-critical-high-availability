@@ -37,6 +37,12 @@ The host user must be able to run Docker without `sudo`, or use the approved
 local privilege procedure. Ninja is recommended for consistent native builds.
 The project requires a compiler with C++20 support.
 
+The baseline (production) build compiler is pinned inside the container image
+(`g++-12`, Debian bookworm's supported default, explicitly selected in the
+Dockerfile). Host and CI build with their distro-default GCC 13; the
+divergence and the exact recorded versions are documented in the
+[development guide](docs/DEVELOPMENT.md) under "Compiler baseline".
+
 ### Supported Commands
 
 Configure and build without tests:

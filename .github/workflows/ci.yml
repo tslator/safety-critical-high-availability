@@ -16,6 +16,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Report primary compiler version
+        run: g++ --version
       - name: Configure, build, and test
         run: |
           cmake -S . -B build/gtest -G Ninja -DSAFETY_CRIT_TEST_FRAMEWORK=GoogleTest
@@ -28,6 +30,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Report primary compiler version
+        run: g++ --version
       - name: Configure, build, and test
         run: |
           cmake -S . -B build/catch2 -G Ninja -DSAFETY_CRIT_TEST_FRAMEWORK=Catch2
@@ -47,6 +51,8 @@ jobs:
         framework: [GoogleTest, Catch2]
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Report primary compiler version
+        run: g++ --version
       - name: Configure, build, and test under ${{ matrix.sanitize }}
         shell: bash
         run: |

@@ -15,9 +15,26 @@ FROM --platform=linux/amd64 debian:bookworm@sha256:813017f3d62be4b5891a7acca6a01
 ENV DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
+# Primary build compiler ("gcc-primary", DEC-0008 #7 / T-0007): Debian
+# bookworm's supported default GCC 12, installed explicitly as the versioned
+# package g++-12 (source: deb.debian.org bookworm/main) and selected via
+# -DCMAKE_CXX_COMPILER. Exact version at the most recent validated rebuild
+# (see NOTES.md, section "T-0007"):
+#   g++-12 12.2.0-14+deb12u1
+#   g++-12 (Debian 12.2.0-14+deb12u1) 12.2.0
+# Debian bookworm and bookworm-backports ship no gcc-13/g++-13 package
+# (verified 2026-09-19), so a GCC 13 pin would require a third-party toolchain
+# repository, which the Phase 0 toolchain policy declines. Host and CI build
+# with their distro-default GCC 13 (13.3.0 on the reference host; CI records
+# g++ --version per run); that divergence from this container baseline is
+# documented in docs/DEVELOPMENT.md, section "Compiler baseline". Verify the
+# built image reports its compiler with: docker run --rm <image> --version
+# Rebuild rule (DEC-0008 maintenance): re-record the package name, version,
+# source, and --version output on every toolchain update.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
+        g++-12 \
         cmake \
         ninja-build \
         git \
@@ -28,7 +45,9 @@ RUN apt-get update \
 WORKDIR /workspace
 COPY . /workspace
 
-RUN cmake -S . -B build/docker -G Ninja \
+RUN g++-12 --version \
+    && cmake -S . -B build/docker -G Ninja \
+      -DCMAKE_CXX_COMPILER=g++-12 \
       -DSAFETY_CRIT_BUILD_TESTING=ON \
       -DSAFETY_CRIT_TEST_FRAMEWORK=GoogleTest \
     && cmake --build build/docker --parallel \

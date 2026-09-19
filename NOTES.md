@@ -187,3 +187,24 @@ Host: x86_64 Linux (glibc 2.39; `shm_open` in libc, no `-lrt`), `/dev/shm` tmpfs
 |Hosted CI (.github/workflows/ci.yml: native x2, sanitizers {ASan+UBSan, TSan} x2, container x2, AI guidance adapter drift)|PASS - run 35443509963 on commit 7d4b659 (2026-09-19): all nine jobs succeeded|
 
 Notes: T1.4 adds named `/dev/shm` attach/detach (decision DEC-0007; deviation #11 in docs/phases/PHASE_1_SHARED_MEMORY.md). New files `shm_attach.hpp` / `src/shm_attach.cpp` (deviation: the attach API lives in its own header to keep POSIX system headers out of the widely-included `shared_region.hpp`) and test module `shm_attach_test.cpp`. `SharedRegionHandle` is a move-only RAII value-or-error handle (C++20 stand-in for `std::expected`, which is forbidden): `create_or_open(name)` returns a handle carrying either the mapped region or an `AttachError`+`errno`, never throws. Create-vs-existing is decided by object size (`fstat`): 0 => fresh (ftruncate to `sizeof(SharedRegion)` + mmap + `madvise` + `initialize`), `sizeof(SharedRegion)` => existing (`verify_identity`, never re-initialize), any other nonzero size => `kSizeMismatch`; a header failing identity => `kStaleIdentity` (zero-fill from tmpfs yields magic 0). Detach is `munmap` only; a separate test-only `destroy()` does the destructive `shm_unlink` (production never unlinks while peers may be attached). `MADV_DONTFORK` is set so forked children re-attach by name (exercised by the fork test). No layout change, so `kRegionVersion` stays 3. The TSan build itself must run under `setarch --addr-no-randomize` (test discovery executes TSan binaries at build time; without it, discovery aborts with the known exit-66 memory-mapping fatal). T1.5 (T-0006) is now unblocked.
+---
+
+Gate: T-0007 (Pin the primary build compiler - baseline evidence prerequisite)
+Date: 2026-09-19
+Host: x86_64 Linux, Docker Engine 29.6.2
+
+Primary compiler resolution: Debian bookworm ships no gcc-13/g++-13 package (verified 2026-09-19 on the digest-pinned base `debian:bookworm@sha256:813017f3...`: `apt-cache show gcc-13` -> "No packages found"; `apt-cache madison g++-13 gcc-13` empty even with `bookworm-backports` added; `g++` candidate = 4:12.2.0-3 from bookworm/main). A third-party toolchain repository is declined by the Phase 0 toolchain policy, so T-0007 resolves via its "Debian-supported default with a note" option.
+
+Recorded primary compiler (gcc-primary): package `g++-12` = 12.2.0-14+deb12u1, source deb.debian.org bookworm/main; `g++-12 --version` -> "g++-12 (Debian 12.2.0-14+deb12u1) 12.2.0". Explicitly installed in the Dockerfile builder stage and selected with -DCMAKE_CXX_COMPILER=g++-12; builder stage logs `g++-12 --version` on every image build.
+
+|Command / Check|Result|
+|---|---|
+|`docker build --pull --progress=plain --tag safety-critical-ha:phase0 .`|PASS - exit 0; build log shows `g++-12 (Debian 12.2.0-14+deb12u1) 12.2.0` before configure; in-image CTest 41/41 passed|
+|`docker run --rm safety-critical-ha:phase0 --version`|PASS - "safety-critical-ha version 0.1.0 / Compiler: GNU 12.2.0" - the image now reports an explicit, recorded primary compiler|
+|`./run_demo.sh` (compose config, build, up --wait, ps, exec version, teardown)|PASS - exit 0; 5/5 services healthy; `docker compose exec supervisor safety-critical-ha --version` -> "Compiler: GNU 12.2.0"; 0 project containers remaining after run|
+|`dpkg-query -W -f=... g++-12` in the digest-pinned base|`g++-12 = 12.2.0-14+deb12u1` (deb.debian.org bookworm/main)|
+|Host native builds (fresh dirs, distro-default `g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0`)|PASS - GoogleTest 41/41, Catch2 41/41, ASan+UBSan 41/41, no sanitizer diagnostics (TSan unchanged by this task; covered by CI)|
+|`./scripts/sync-agent-guidance.sh --check`|PASS - adapters byte-identical (CORE.md untouched)|
+|Hosted CI|Pending - divergence between host/CI GCC 13.x and the container GCC 12 baseline is explicitly documented (Dockerfile comment, docs/DEVELOPMENT.md "Compiler baseline"); native/sanitizer CI jobs now record `g++ --version` per run ("Report primary compiler version" step). Task closes when the hosted run after this change is green|
+
+Notes: T-0007 changes the Dockerfile builder stage (explicit `g++-12` package + `-DCMAKE_CXX_COMPILER=g++-12` + build-log version report), adds CI compiler-report steps, and documents the per-environment compiler baseline in README.md and docs/DEVELOPMENT.md. No source, CMake logic, or warning-policy changes. After this, container/CI results are attributable per DEC-0008 #7, unblocking T-0008 clang-vs-primary comparisons.
