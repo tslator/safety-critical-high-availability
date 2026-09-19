@@ -9,6 +9,11 @@ architecture and [`SAFETY_CRITICAL_HA_PLAN.md`](../../SAFETY_CRITICAL_HA_PLAN.md
 - `app/` — the versioned command-line application entry point.
 - `shared-memory/` — the shared region layout, atomic worker-status flags,
   and lock-free MPMC ring buffer library (`safety_crit::shared_memory`).
+- `workers/` — the Phase 2 worker runtime library (`safety_crit::workers`):
+  worker config, deterministic workload simulation, ranges processing
+  pipeline, work loop with deadline monitoring, and signal wiring per
+  [DEC-0009](../decisions/0009-phase2-worker-runtime.md); tests live under
+  `workers/tests/`.
 - `tests/` — top-level smoke tests; component tests live alongside their
   library under `shared-memory/tests/`.
 - `docs/` — all project documentation, including `docs/ai-guidance/`.

@@ -33,6 +33,25 @@ SAFETY_CRIT_TEST_CASE(AtomicFlags, BitsAreIndependent) {
     SAFETY_CRIT_ASSERT(load_has_flag(status, WorkerStatusFlag::kRecovering));
 }
 
+SAFETY_CRIT_TEST_CASE(AtomicFlags, OverrunBitIsIndependent) {
+    // Phase 2 (DEC-0009 #4): kOverrun is a new semantics bit in the same
+    // packed word; it must combine and clear without bleeding into the
+    // Phase 1 bits, and vice versa.
+    std::atomic<std::uint64_t> status{0};
+    set_flag(status, WorkerStatusFlag::kRunning);
+    set_flag(status, WorkerStatusFlag::kOverrun);
+    SAFETY_CRIT_ASSERT(load_has_flag(status, WorkerStatusFlag::kOverrun));
+    SAFETY_CRIT_ASSERT(load_has_flag(status, WorkerStatusFlag::kRunning));
+    clear_flag(status, WorkerStatusFlag::kOverrun);
+    SAFETY_CRIT_ASSERT(!load_has_flag(status, WorkerStatusFlag::kOverrun));
+    SAFETY_CRIT_ASSERT(load_has_flag(status, WorkerStatusFlag::kRunning));
+    std::uint64_t s = to_bits(WorkerStatusFlag::kIdle) | to_bits(WorkerStatusFlag::kOverrun);
+    SAFETY_CRIT_ASSERT(has_flag(s, WorkerStatusFlag::kOverrun));
+    SAFETY_CRIT_ASSERT(has_flag(s, WorkerStatusFlag::kIdle));
+    SAFETY_CRIT_ASSERT(!has_flag(s, WorkerStatusFlag::kCrashed));
+    SAFETY_CRIT_ASSERT(to_bits(WorkerStatusFlag::kOverrun) == (1ULL << 4));
+}
+
 SAFETY_CRIT_TEST_CASE(AtomicFlags, WithFlagCombinesWithoutCrossBleed) {
     std::uint64_t s = 0;
     s = with_flag(s, WorkerStatusFlag::kRunning, true);

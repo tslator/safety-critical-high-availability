@@ -252,3 +252,24 @@ Stress suite (new `shared-memory/tests/ring_buffer_stress.cpp`, 3 cases): 1P x 4
 |Hosted CI / Phase Exit Gate (.github/workflows/ci.yml: native x2, sanitizers {ASan+UBSan, TSan} x2, clang-verify, container x2, AI guidance adapter drift)|PASS - run 35463176042 on commit 96e0d3f (2026-09-19): all ten jobs succeeded, stress suite green in every hosted configuration|
 
 Notes: T1.5 completes Phase 1: G1.1-G1.5 all green and the exit row (hosted CI on the Phase 1 merge commit) satisfied by 35463176042. Deviation #12 records the accounting methodology, the done-flag/drain termination protocol (drain must run concurrently with producers - the ring is bounded; `done` published only after all producers join), and the full-1M-under-TSan finding. No region-layout change (`kRegionVersion` stays 3); the layout is now frozen for Phase 2 per the Handoff section. Phase 2 (workers) is the next planned work; its plan sketch uses C++23/26 facilities and needs a reconciliation decision before canonical task records are opened.
+
+---
+
+Gate: G2.1 (Phase 2 T2.1 - worker core; T-0009)
+Date: 2026-09-19
+Host: x86_64 Linux, `g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0`; clang leg in the pinned `safety-critical-ha:verify-clang-14` image (clang 14.0.6 / libstdc++ 12.2)
+
+New `workers/` component (DEC-0009): `safety_crit::workers` static library (worker_config validate, splitmix64 workload sim with per-(worker,tick) seed derivation, C++20 ranges processing pipeline with manual-loop witness) + `workers_core_test` (6 cases) + `OVERRUN` status flag bit (semantics addition, layout unchanged) + `AtomicFlags.OverrunBitIsIndependent`.
+
+|Command / Check|Result|
+|---|---|
+|GoogleTest (fresh dir)|PASS - 51/51 (44 pre-existing + 6 workers_core + 1 flags), zero warnings|
+|Catch2 (fresh dir)|PASS - 51/51|
+|ASan+UBSan (GoogleTest, fresh dir)|PASS - 51/51, no diagnostics|
+|TSan + GoogleTest / Catch2 (fresh dirs, setarch harness)|PASS - 51/51 each, no diagnostics|
+|clang-verify (pinned image, preset tree)|PASS - 51/51; first run FAILED: clang 14.0.6 + libstdc++ 12.2 cannot instantiate `<ranges>` at all (even `views::iota`; root cause: view_interface/`__cust_access::__begin` bootstrap failure, upstream workarounds landed with GCC 13). Fix: `SAFETY_CRIT_WORKERS_NO_RANGES` guard selects a byte-identical manual fallback on that combo (phase-plan deviation #1); the equivalence witness runs with the live ranges path on GCC locally and in CI|
+|Splitmix64 reference vectors|PASS - computed independently from the reference stream (state-chained, not output-chained); the test caught an initial mis-chained vector|
+|`./scripts/sync-agent-guidance.sh --check`|PASS - adapters byte-identical (CORE.md untouched)|
+|Hosted CI|Pending run on the T-0009 commit - append run ID here at completion|
+
+Notes: Determinism, seed sensitivity (xor/mix over worker idx and tick), pipeline/manual equivalence over 3x1000 ticks, and an explicit policy witness (SN threshold 96, Q8 calibrate, take-cap 12 at the boundary) are all green on every configuration.

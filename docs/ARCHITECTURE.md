@@ -6,6 +6,7 @@ the Phase 1 `safety_crit::shared_memory` library.
 ```text
 app/                    versioned command-line application
 shared-memory/          shared region, flags, and lock-free ring buffer
+workers/                worker runtime (config, workload, pipeline, loop)
 tests/                  Phase 0 smoke test
 Docker / Compose        reproducible runtime baseline
 ```

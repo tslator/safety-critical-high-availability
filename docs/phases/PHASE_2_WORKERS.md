@@ -49,8 +49,20 @@ Authoritative decision: [DEC-0009](../decisions/0009-phase2-worker-runtime.md)
 
 ## Deviations From the Plan Sketch (recorded decisions)
 
-(Recorded during implementation; the DEC-0009 reconciliation itself is
-D-2026-09-19-002 / DEC-0009 above.)
+1. **`std::ranges` pipeline guarded by toolchain (T2.1).** Verification
+   finding: clang 14.0.6 against libstdc++ 12.2 cannot instantiate `<ranges>`
+   views at all — even `views::iota` fails inside `view_interface` ("no
+   member named 'begin'", witnessed in the pinned clang-verify image;
+   upstream libstdc++ workarounds for clang landed with GCC 13). The
+   `process_sensor_data` ranges composition therefore builds only where it
+   compiles (`#if !defined(__clang__) || _GLIBCXX_RELEASE > 12` semantics),
+   with a byte-identical manual fallback elsewhere. The plan-test-#4
+   equivalence witness runs with the live ranges path on gcc-primary (local)
+   and CI GCC 13; the clang job compiles and tests the fallback path.
+   Consequence recorded: a future clang-verify toolchain update (>= 16 or
+   libstdc++ >= 13) retires the guard in an intentional toolchain change.
+
+(Further deviations recorded during implementation.)
 
 ## Task Plan
 

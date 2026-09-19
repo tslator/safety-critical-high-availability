@@ -1,7 +1,7 @@
 # T-0009: Phase 2 T2.1 — Worker Core
 
-- Status: Planned
-- Owner: Unassigned
+- Status: In Review (implementation + local validation done; awaiting hosted CI)
+- Owner: AI agent (opencode)
 - Priority: High
 - Depends on: Phase 1 exit (G1.1–G1.5)
 - Phase: Phase 2
@@ -38,4 +38,12 @@ Gate G2.1 (see phase plan). Record in `NOTES.md`.
 
 ## Completion Notes
 
-(To be recorded at completion.)
+Implemented 2026-09-19 (`workers/` library: `worker_config.hpp/.cpp`,
+`workload.hpp`, `workers_core_test.cpp` 6 cases, `OVERRUN` bit +
+`AtomicFlags.OverrunBitIsIndependent`). Local validation: 51/51 in
+GoogleTest, Catch2, ASan+UBSan, TSan (both frameworks), and clang-verify —
+zero warnings on first-party code. Deviation #1 in the phase plan records
+the clang-14/libstdc++-12 `<ranges>` breakage and the guard/fallback.
+Splitmix64 reference vectors computed from the reference stream
+(independently verified); one initially mis-chained vector was caught by the
+test itself.

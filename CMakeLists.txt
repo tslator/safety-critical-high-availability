@@ -25,6 +25,7 @@ if(SAFETY_CRIT_BUILD_TESTING)
 endif()
 
 add_subdirectory(shared-memory)
+add_subdirectory(workers)
 add_subdirectory(app)
 
 if(SAFETY_CRIT_BUILD_TESTING)
