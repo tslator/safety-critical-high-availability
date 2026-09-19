@@ -1,6 +1,6 @@
 # T-0007: Pin the Primary Build Compiler (Baseline Evidence Prerequisite)
 
-- Status: In Review
+- Status: Complete
 - Owner: AI agent (opencode)
 - Priority: High
 - Depends on: None
@@ -48,5 +48,8 @@ every image build; `--version` reports `Compiler: GNU 12.2.0`. Host
 (Ubuntu 13.3.0) and CI (ubuntu-latest, 13.x) diverge intentionally; the
 divergence is documented in `docs/DEVELOPMENT.md` ("Compiler baseline") and
 CI native/sanitizer jobs record `g++ --version` per run. Local matrix and
-container/compose smokes are green; status moves to Complete when the hosted
-CI run covering this change is green.
+container/compose smokes are green. Hosted CI run 35450545373 on commit
+db73b6a (2026-09-19): all nine jobs succeeded; the new report steps recorded
+CI compiler `g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0` (native/sanitizer
+jobs) and `Compiler: GNU 12.2.0` (container/compose jobs), matching the
+documented baseline.
