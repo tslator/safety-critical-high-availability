@@ -24,3 +24,12 @@ target_link_libraries(integrity_test PRIVATE safety_crit::shared_memory)
 safety_crit_apply_warnings(integrity_test)
 safety_crit_apply_sanitizers(integrity_test)
 safety_crit_register_tests(integrity_test)
+
+# T1.4: named shared-memory attach/detach (create-vs-existing, stale rejection,
+# cross-process re-attach). Suite name is lowercase `shm_attach` so the G1.4
+# gate command `ctest -R shm` matches the registered (case-sensitive) test names.
+add_executable(shm_attach_test shm_attach_test.cpp)
+target_link_libraries(shm_attach_test PRIVATE safety_crit::shared_memory)
+safety_crit_apply_warnings(shm_attach_test)
+safety_crit_apply_sanitizers(shm_attach_test)
+safety_crit_register_tests(shm_attach_test)
