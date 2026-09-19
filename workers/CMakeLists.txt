@@ -1,6 +1,7 @@
 # Phase 2, T2.1: workers library (DEC-0009).
 add_library(safety_crit_workers STATIC
     src/worker_config.cpp
+    src/signals.cpp
 )
 add_library(safety_crit::workers ALIAS safety_crit_workers)
 

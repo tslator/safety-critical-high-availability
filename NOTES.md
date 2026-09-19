@@ -270,6 +270,26 @@ New `workers/` component (DEC-0009): `safety_crit::workers` static library (work
 |clang-verify (pinned image, preset tree)|PASS - 51/51; first run FAILED: clang 14.0.6 + libstdc++ 12.2 cannot instantiate `<ranges>` at all (even `views::iota`; root cause: view_interface/`__cust_access::__begin` bootstrap failure, upstream workarounds landed with GCC 13). Fix: `SAFETY_CRIT_WORKERS_NO_RANGES` guard selects a byte-identical manual fallback on that combo (phase-plan deviation #1); the equivalence witness runs with the live ranges path on GCC locally and in CI|
 |Splitmix64 reference vectors|PASS - computed independently from the reference stream (state-chained, not output-chained); the test caught an initial mis-chained vector|
 |`./scripts/sync-agent-guidance.sh --check`|PASS - adapters byte-identical (CORE.md untouched)|
-|Hosted CI|Pending run on the T-0009 commit - append run ID here at completion|
+|Hosted CI|PASS - run 35472130840 on commit 697172e (2026-09-19): all ten jobs succeeded, workers_core_test green in every hosted configuration|
 
 Notes: Determinism, seed sensitivity (xor/mix over worker idx and tick), pipeline/manual equivalence over 3x1000 ticks, and an explicit policy witness (SN threshold 96, Q8 calibrate, take-cap 12 at the boundary) are all green on every configuration.
+
+---
+
+Gate: G2.2 (Phase 2 T2.2 - work loop, signals, deadline monitoring; T-0010)
+Date: 2026-09-19
+Host: x86_64 Linux, `g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0`; clang leg in the pinned `safety-critical-ha:verify-clang-14` image
+
+New: `work_loop.hpp` (region-agnostic template loop: clock injection, per-tick budget check -> OVERRUN flag + count, stop_token OR sig_atomic_t cancellation between ticks, yield-retry push backpressure, optional `pending_tick` accounting), `signals.hpp/.cpp` (sigaction: SIGTERM/SIGINT -> async-signal-safe stop flag only; SIGUSR1 -> `_exit(138)` forced-crash hook for Phase 5), `workers_loop_test` (8 cases).
+
+|Command / Check|Result|
+|---|---|
+|GoogleTest (fresh dir)|PASS - 59/59 (51 pre-existing + 8 loop), zero warnings|
+|Catch2 (fresh dir)|PASS - 59/59|
+|ASan+UBSan (GoogleTest, fresh dir)|PASS - 59/59, no diagnostics|
+|TSan + GoogleTest / Catch2 (fresh dirs, setarch harness)|PASS - 59/59 each, no data-race reports (loop cancellation + flag traffic clean)|
+|clang-verify (pinned image)|PASS - 59/59, zero clang warnings|
+|Loop witnesses|PASS - exact tick accounting (in-order, no duplication); stop-token landing mid-push completes the in-flight push then stops before the next tick (bounded latency, `pending_tick` correct); signal-flag stop equivalent; fake-clock budget overrun sets OVERRUN every tick (25/25) and stays clear when respected (0/25); ring-full retry loop retries and exits only on stop; end-to-end payload determinism through the loop matches direct workload computation across repeated runs|
+|Signal install/query|PASS - custom dispositions installed for SIGTERM/SIGINT/SIGUSR1 and restored on uninstall; SIGUSR1 _exit path deliberately left to fork-based T2.3 integration (never exercised in-process)|
+|`./scripts/sync-agent-guidance.sh --check`|PASS - adapters byte-identical (CORE.md untouched)|
+|Hosted CI|Pending run on the T-0010 commit - append run ID at completion|
