@@ -6,7 +6,12 @@
 #include <array>
 #include <cstdint>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <string>
+#include <unistd.h>
 
+#include "safety_crit/workers/pidfile.hpp"
 #include "safety_crit/workers/worker_config.hpp"
 #include "safety_crit/workers/workload.hpp"
 
@@ -148,4 +153,32 @@ SAFETY_CRIT_TEST_CASE(WorkersCore, PipelinePolicyExplicitWitness) {
     }
     SAFETY_CRIT_ASSERT(processed_equal(process_sensor_data(raw),
                                        process_sensor_data_manual(raw)));
+}
+
+SAFETY_CRIT_TEST_CASE(WorkersPidfile, ContractPathWriteRemove) {
+    // T3.2 (DEC-0010 #2) writer side: canonical path, atomic write of the
+    // decimal pid, and removal. The alive/dead liveness verdict and the
+    // end-to-end cross-process contract are pinned by the fork integration
+    // tests (plain build only).
+    SAFETY_CRIT_ASSERT(worker_pid_path("/x", 2) == "/x/safety_crit_worker_2.pid");
+
+    std::error_code ec;
+    const auto dir = std::filesystem::temp_directory_path(ec) /
+                     ("scrit_pidfile_test_" + std::to_string(::getpid()));
+    SAFETY_CRIT_ASSERT(!ec);
+
+    SAFETY_CRIT_ASSERT(write_worker_pidfile(dir, 1));  // creates the directory too
+    const auto path = worker_pid_path(dir, 1);
+    SAFETY_CRIT_ASSERT(std::filesystem::is_regular_file(path, ec));
+
+    std::ifstream in(path);
+    std::string content;
+    SAFETY_CRIT_ASSERT(static_cast<bool>(in));
+    std::getline(in, content);
+    SAFETY_CRIT_ASSERT(content == std::to_string(static_cast<long>(::getpid())));
+
+    remove_worker_pidfile(dir, 1);
+    SAFETY_CRIT_ASSERT(!std::filesystem::exists(path, ec));
+    remove_worker_pidfile(dir, 1);  // removing again is a silent no-op
+    std::filesystem::remove_all(dir, ec);
 }

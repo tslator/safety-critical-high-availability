@@ -94,7 +94,7 @@ int run_standby(shared_memory::SharedRegion& region, const WorkerConfig& cfg,
 }
 }  // namespace
 
-int run_worker(const WorkerConfig& cfg, const char* region_name) {
+int run_worker(const WorkerConfig& cfg, const char* region_name, const char* pid_dir) {
     if (!validate_config(cfg)) {
         std::fprintf(stderr, "worker: invalid configuration\n");
         return 2;
@@ -108,9 +108,19 @@ int run_worker(const WorkerConfig& cfg, const char* region_name) {
         return 1;
     }
 
+    // Fatal on failure: a live worker without a pidfile is indistinguishable
+    // from a crashed one for the monitor (DEC-0010 #2).
+    if (!write_worker_pidfile(pid_dir, cfg.worker_idx)) {
+        std::fprintf(stderr, "worker: cannot write pidfile in '%s'\n", pid_dir);
+        handle.detach();
+        return 1;
+    }
+
     signals::SignalState signal_state;
     if (!signals::install(signal_state)) {
         std::fprintf(stderr, "worker: signal handler installation failed\n");
+        remove_worker_pidfile(pid_dir, cfg.worker_idx);
+        handle.detach();
         return 1;
     }
 
@@ -121,6 +131,10 @@ int run_worker(const WorkerConfig& cfg, const char* region_name) {
         rc = run_standby(*handle.get(), cfg, signal_state);
     }
 
+    // Clean exit only: the IDLE status published above plus pidfile removal
+    // is the "gone quietly" signature the monitor classifies as idle, never
+    // as a crash (a crash never reaches this line).
+    remove_worker_pidfile(pid_dir, cfg.worker_idx);
     signals::uninstall();
     handle.detach();
     return rc;
