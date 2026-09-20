@@ -27,3 +27,4 @@ The high-level roadmap remains in
 - [Phase 1 - Shared Memory](PHASE_1_SHARED_MEMORY.md)
 - [Phase 2 - Worker Processes](PHASE_2_WORKERS.md)
 - [Phase 3 - Monitor Daemon](PHASE_3_MONITOR_DAEMON.md)
+- [Phase 4 - Supervisor and Crash Failover](PHASE_4_SUPERVISOR.md)

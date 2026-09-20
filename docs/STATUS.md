@@ -1,6 +1,6 @@
 # Project Status
 
-- Current phase: Phase 3 complete (G3.1–G3.3 + exit gate) — Phase 4 supervisor planning next
+- Current phase: Phase 3 complete (G3.1–G3.3 + exit gate) — Phase 4 supervisor planning initiated
 - Current gate: G3.3 complete (Phase 3 exit, hosted run 35518074368)
 - Last updated: 2026-09-20
 
@@ -21,15 +21,15 @@
 | T3.1: monitor core | Complete | Config validation, health classification + alert vocabulary (DEC-0010 #3), latched state machine; G3.1 |
 | T3.2: pidfile, poll loop, JSON alerts, monitor CLI | Complete | Worker pidfile contract, liveness reader, injected-clock poll loop, snprintf JSON lines, `monitor` subcommand; G3.2 |
 | T3.3: monitor integration and Phase 3 exit | Complete | 4 fork-based scenarios (SIGKILL crash, clean-exit idle, SIGSTOP stall/recovery, standby) x5 stable; exit run 35518074368 |
+| Phase 4 planning: supervisor and crash failover | In progress | Accepted review D-2026-09-20-002, decision DEC-0011, tasks T-0015–T-0022; implementation not started |
 
 ## Next Work
 
-1. Phase 4 kickoff (supervisor): consume the monitor's alert stream, promote
-   the standby on `worker_crashed`, restart victims as standby, enforce the
-   failover budget — the Phase 3 handoff contract. Discussion/decision +
-   task records first.
+1. Phase 4 implementation kickoff: ownership/epoch model, worker promotion,
+   supervisor lifecycle, crash failover, continuity witness, scheduling, and
+   real Compose runtime wiring.
 2. Optional tooling follow-ups from DEC-0008: `clang-static-analysis`
-   (advisory), `clang-sanitizers` presets, `COPY_ONLY` dev-warning cleanup.
+   (advisory) and `clang-sanitizers` presets.
 
 ## Documentation Map
 
@@ -42,4 +42,5 @@
 - [Reviews](reviews/)
 - [Evidence](evidence/)
 - [Phase plans](phases/README.md)
+- [Phase 4 plan](phases/PHASE_4_SUPERVISOR.md)
 - [Phase 0 plan](phases/PHASE_0_CONTAINER_AND_TOOLING.md) and [Phase 1 plan](phases/PHASE_1_SHARED_MEMORY.md)
