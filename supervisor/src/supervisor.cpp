@@ -25,6 +25,7 @@
 #include "safety_crit/shared_memory/shm_attach.hpp"
 #include "safety_crit/workers/worker_config.hpp"
 #include "safety_crit/workers/worker_entry.hpp"
+#include "safety_crit/workers/workload.hpp"
 
 namespace safety_crit::supervisor {
 namespace {
@@ -226,6 +227,34 @@ bool parse_monitor_line(std::string_view line, MonitorLine& out) {
     return parse_alert(line, out) || parse_report(line, out);
 }
 
+bool drain_output_witness(shared_memory::SharedRegion& region, std::size_t logical_ring,
+                          OutputWitness& witness) {
+    if (logical_ring >= shared_memory::kMaxWorkers) {
+        return false;
+    }
+    shared_memory::OwnershipToken ownership;
+    if (!shared_memory::read_ownership(region, logical_ring, ownership)) {
+        return false;
+    }
+    if (witness.last_epoch != 0u && ownership.epoch < witness.last_epoch) {
+        return false;
+    }
+    const std::uint64_t corruption_before = region.rings[logical_ring].corruption_count();
+    workers::ProcessedData record;
+    while (region.rings[logical_ring].try_pop(record)) {
+        const std::uint64_t sequence = region.rings[logical_ring].consumed() - 1u;
+        if (witness.records != 0u && sequence != witness.next_sequence) {
+            return false;
+        }
+        witness.next_sequence = sequence + 1u;
+        ++witness.records;
+    }
+    const std::uint64_t corruption_after = region.rings[logical_ring].corruption_count();
+    witness.corruptions += corruption_after - corruption_before;
+    witness.last_epoch = ownership.epoch;
+    return corruption_after == corruption_before;
+}
+
 int run_supervisor(const SupervisorConfig& config) {
     if (config.region_name == nullptr || config.pid_dir.empty()) {
         return 2;
@@ -301,6 +330,9 @@ int run_supervisor(const SupervisorConfig& config) {
     std::string pending;
     std::string last_line;
     bool input_error = false;
+    OutputWitness output_witness_a;
+    OutputWitness output_witness_b;
+    std::uint64_t records_before_failover = 0;
     char buffer[512];
     state = SupervisorState::kRunning;
     bool recovery_failed = false;
@@ -310,6 +342,18 @@ int run_supervisor(const SupervisorConfig& config) {
             state = SupervisorState::kFailsafe;
             recovery_failed = true;
             break;
+        }
+        if (!drain_output_witness(*region.get(), 0u, output_witness_a) ||
+            !drain_output_witness(*region.get(), 1u, output_witness_b)) {
+            state = SupervisorState::kFailsafe;
+            recovery_failed = true;
+            break;
+        }
+        shared_memory::OwnershipToken logical_a;
+        if (shared_memory::read_ownership(*region.get(), 0u, logical_a) &&
+            logical_a.physical_owner == 2u && logical_a.epoch > 2u &&
+            output_witness_a.records > records_before_failover) {
+            output_witness_a.first_post_failover = true;
         }
         struct pollfd descriptor{pipe_fds[0], POLLIN | POLLHUP, 0};
         const int ready = ::poll(&descriptor, 1, 10);
@@ -332,6 +376,7 @@ int run_supervisor(const SupervisorConfig& config) {
                 if (parsed.kind == MonitorLineKind::kAlert &&
                     parsed.event == "worker_crashed") {
                     state = SupervisorState::kFailoverDetected;
+                    records_before_failover = output_witness_a.records;
                 }
                 std::fwrite(line.data(), 1, line.size(), stdout);
                 std::fputc('\n', stdout);

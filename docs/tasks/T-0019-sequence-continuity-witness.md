@@ -1,7 +1,7 @@
 # T-0019: Phase 4 Sequence Continuity and Output Witness
 
-- Status: Planned
-- Owner: Unassigned
+- Status: Complete
+- Owner: AI agent (opencode)
 - Priority: High
 - Depends on: T-0015, T-0016, T-0018
 - Phase: Phase 4
@@ -22,4 +22,7 @@ no-loss, no-duplicate, and first-output timing across takeover.
 
 ## Evidence
 
-Record timing distributions and continuity results in [Phase 4 evidence](../evidence/phase-4.md).
+The supervisor now drains each logical ring outside the ring hot path, validates
+ownership epoch monotonicity, transport sequence continuity, and CRC failure
+counts, and records whether output is observed after logical-A takeover.
+Validation is recorded in [Phase 4 evidence](../evidence/phase-4.md).

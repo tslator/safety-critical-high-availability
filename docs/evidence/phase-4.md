@@ -58,5 +58,16 @@ This record is the evidence target for
 - GoogleTest: 91/91 passed in `build/t0015-gtest`.
 - Catch2: 91/91 passed in `build/t0015-catch2`.
 
+## T-0019 Result
+
+- Implementation: supervisor-side output witness drains committed records after
+  CRC validation, checks monotonic transport positions and ownership epochs,
+  counts corruption, and marks output observed after the logical-A epoch
+  transfer. The witness is outside the ring operation hot path.
+- Unit witness: two committed records drain in sequence and a second drain is
+  empty without duplication.
+- GoogleTest: 92/92 passed in `build/t0015-gtest`.
+- Catch2: 92/92 passed in `build/t0015-catch2`.
+
 Each closed task must link implementation and durable command/result evidence
 here or in `NOTES.md`.

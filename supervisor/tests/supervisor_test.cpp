@@ -11,6 +11,8 @@
 
 #include "safety_crit/supervisor/supervisor.hpp"
 #include "safety_crit/shared_memory/shm_attach.hpp"
+#include "safety_crit/shared_memory/shared_region.hpp"
+#include "safety_crit/workers/workload.hpp"
 
 using safety_crit::supervisor::MonitorLine;
 using safety_crit::supervisor::MonitorLineKind;
@@ -47,6 +49,25 @@ SAFETY_CRIT_TEST_CASE(Supervisor, AcceptsShutdownReport) {
         R"({"ts":42,"level":"info","component":"monitor","event":"monitor_report","polls":1,"alerts":{},"workers":[]})",
         line));
     SAFETY_CRIT_ASSERT(line.kind == MonitorLineKind::kReport);
+}
+
+SAFETY_CRIT_TEST_CASE(Supervisor, DrainsContinuousCrcCheckedOutput) {
+    safety_crit::shared_memory::SharedRegion region{};
+    SAFETY_CRIT_ASSERT(safety_crit::shared_memory::initialize(region));
+    safety_crit::workers::ProcessedData first{};
+    first.worker_idx = 0u;
+    first.tick = 4u;
+    safety_crit::workers::ProcessedData second = first;
+    second.tick = 5u;
+    SAFETY_CRIT_ASSERT(safety_crit::shared_memory::push(region, 0u, first));
+    SAFETY_CRIT_ASSERT(safety_crit::shared_memory::push(region, 0u, second));
+    safety_crit::supervisor::OutputWitness witness;
+    SAFETY_CRIT_ASSERT(safety_crit::supervisor::drain_output_witness(region, 0u, witness));
+    SAFETY_CRIT_ASSERT(witness.records == 2u);
+    SAFETY_CRIT_ASSERT(witness.next_sequence == 2u);
+    SAFETY_CRIT_ASSERT(witness.corruptions == 0u);
+    SAFETY_CRIT_ASSERT(!witness.first_post_failover);
+    SAFETY_CRIT_ASSERT(safety_crit::supervisor::drain_output_witness(region, 0u, witness));
 }
 
 SAFETY_CRIT_TEST_CASE(Supervisor, LaunchesAndReapsTopology) {
