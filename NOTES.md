@@ -292,4 +292,35 @@ New: `work_loop.hpp` (region-agnostic template loop: clock injection, per-tick b
 |Loop witnesses|PASS - exact tick accounting (in-order, no duplication); stop-token landing mid-push completes the in-flight push then stops before the next tick (bounded latency, `pending_tick` correct); signal-flag stop equivalent; fake-clock budget overrun sets OVERRUN every tick (25/25) and stays clear when respected (0/25); ring-full retry loop retries and exits only on stop; end-to-end payload determinism through the loop matches direct workload computation across repeated runs|
 |Signal install/query|PASS - custom dispositions installed for SIGTERM/SIGINT/SIGUSR1 and restored on uninstall; SIGUSR1 _exit path deliberately left to fork-based T2.3 integration (never exercised in-process)|
 |`./scripts/sync-agent-guidance.sh --check`|PASS - adapters byte-identical (CORE.md untouched)|
-|Hosted CI|Pending run on the T-0010 commit - append run ID at completion|
+|Hosted CI|PASS - run 35473680814 on commit 0fdba35 (2026-09-19): all ten jobs succeeded|
+
+---
+
+Gate: G2.3 / Phase 2 exit (T-0011)
+Date: 2026-09-19
+Host: x86_64 Linux, `g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0`; clang leg in the pinned `safety-critical-ha:verify-clang-14` image
+
+New: `safety-critical-ha worker` subcommand (hand-rolled parsing: --id a|b|c, --role hot|standby, --ticks, --tick-interval-ms, --budget-us, --region; rc=2 on invalid input; --version untouched), `workers/src/worker_entry.cpp` (create-or-open attach; hot: RUNNING -> loop -> IDLE with region-level `push()`; standby: IDLE + read-only status polling, never touches a ring), `workers_integration_test` (fork-based, plain build; degrades to a skip-pass under sanitizers per G1.4 convention). `ProcessedData` re-sized/re-ordered to 48 bytes (cap 8 samples) to fit the 52-byte slot.
+
+|Command / Check|Result|
+|---|---|
+|GoogleTest (fresh dir)|PASS - 63/63 (59 pre-existing + 4 integration), zero warnings|
+|Catch2 (fresh dir)|PASS - 63/63 (integration names discoverable under both frameworks; Catch2 assertion-chain incompatibility fixed)|
+|ASan+UBSan / TSan x2 (fresh dirs, setarch harness)|PASS - 60/60 each (4 fork cases replaced by the sanitizer skip-pass); no diagnostics|
+|clang-verify (pinned image)|PASS - 63/63, zero clang warnings|
+|Integration (a) RingDrainRoundTrip|PASS - 200 ticks drained concurrently, exactly-once in-order, payloads byte-equal to recomputed workload; ring empty; worker left IDLE|
+|Integration (b) SigtermCleanStop|PASS - child exits 0 within timeout; committed outputs form a gap-free valid tick prefix; pushed == consumed after drain; IDLE|
+|Integration (c) Sigusr1CrashHook|PASS - exit code 138 (128+SIGUSR1), no cleanup; stale RUNNING left (supervisor declares CRASHED in Phase 4); committed outputs still drain as valid prefix|
+|Integration (d) StandbyPassivity|PASS - rings untouched (pushed == consumed == 0); exits 0 on SIGTERM|
+|CLI manual witness|PASS - `--version` unchanged; hot 50 ticks rc=0; `--budget-us 5` witnessed 2 real-clock overruns; missing/invalid args rc=2; standby SIGTERM rc=0|
+|`./scripts/sync-agent-guidance.sh --check`|PASS - adapters byte-identical (CORE.md untouched)|
+|Hosted CI / Phase Exit Gate|Pending run on the T-0011 commit - append run ID at completion|
+
+Phase Exit Gate table:
+| Required evidence | Source | Status |
+|---|---|---|
+| Core determinism + pipeline equivalence (both frameworks) | G2.1 | PASS (NOTES "G2.1"; hosted 35472130840) |
+| Loop cancellation/deadline clean under sanitizers | G2.2 | PASS (NOTES "G2.2"; hosted 35473680814) |
+| Integration a-d | G2.3 | PASS (above) |
+| Full local matrix green | exit | PASS (above) |
+| Hosted CI green on exit commit | exit | pending first run |

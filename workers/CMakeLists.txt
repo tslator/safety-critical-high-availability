@@ -2,6 +2,7 @@
 add_library(safety_crit_workers STATIC
     src/worker_config.cpp
     src/signals.cpp
+    src/worker_entry.cpp
 )
 add_library(safety_crit::workers ALIAS safety_crit_workers)
 

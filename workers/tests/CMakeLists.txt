@@ -11,3 +11,10 @@ target_link_libraries(workers_loop_test PRIVATE safety_crit::workers)
 safety_crit_apply_warnings(workers_loop_test)
 safety_crit_apply_sanitizers(workers_loop_test)
 safety_crit_register_tests(workers_loop_test)
+
+# T2.3: fork-based multi-process integration (plain build under sanitizers).
+add_executable(workers_integration_test workers_integration_test.cpp)
+target_link_libraries(workers_integration_test PRIVATE safety_crit::workers)
+safety_crit_apply_warnings(workers_integration_test)
+safety_crit_apply_sanitizers(workers_integration_test)
+safety_crit_register_tests(workers_integration_test)

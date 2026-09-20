@@ -1,7 +1,7 @@
 # T-0011: Phase 2 T2.3 — Worker CLI, Region Lifecycle, Integration, Phase Exit
 
-- Status: Planned
-- Owner: Unassigned
+- Status: In Review (implementation + local validation done; awaiting hosted CI exit run)
+- Owner: AI agent (opencode)
 - Priority: High
 - Depends on: [T-0010](T-0010-work-loop-signals-deadlines.md)
 - Phase: Phase 2
@@ -41,6 +41,19 @@ integration tests, and record the Phase 2 exit evidence.
 
 Gate G2.3 + exit table in the phase plan. Record in `NOTES.md`.
 
+## Validation
+
+Recorded 2026-09-19 in [`NOTES.md`](../../NOTES.md) (section "Gate: G2.3 /
+Phase 2 exit"): CLI matrix 63/63 both frameworks (60/60 sanitizer legs,
+fork skip-pass), clang-verify 63/63, integration cases (a)-(d) green, manual
+CLI witnesses (rc=0 clean paths, rc=2 invalid inputs, real-budget overruns,
+standby SIGTERM). Hosted exit run ID appended at completion.
+
 ## Completion Notes
 
-(To be recorded at completion.)
+Implemented 2026-09-19: `worker` subcommand in `app/` (hand-rolled parsing
+per DEC-0009 #5), `workers/src/worker_entry.cpp` (attach + roles + status
+lifecycle), `workers/tests/workers_integration_test.cpp` (fork-based, plain
+build only under sanitizers). `ProcessedData` fixed to 48 bytes (cap 8) to
+ride one 52-byte slot. Deviations recorded: phase-plan #1 (ranges guard);
+integration comment notes the crash mid-claim verification direction.

@@ -70,13 +70,15 @@ struct RawTick {
 
 // Pipeline output: calibrated values of the accepted samples, in input
 // order. Fixed capacity; overflow samples are dropped by std::views::take.
-constexpr std::size_t kMaxOutSamples = 12;
+// Field order and the cap are sized so sizeof == 48 <= kDefaultSlotBytes
+// (52), letting a whole record ride one region slot (T2.3).
+constexpr std::size_t kMaxOutSamples = 8;
 
 struct ProcessedData {
-    std::uint32_t worker_idx{0};
     std::uint64_t tick{0};
-    std::uint32_t count{0};
     std::array<std::int32_t, kMaxOutSamples> values{};
+    std::uint32_t worker_idx{0};
+    std::uint32_t count{0};
 };
 
 // Acceptance threshold and calibration gain, plain constants so the manual

@@ -1,6 +1,6 @@
 # T-0010: Phase 2 T2.2 — Work Loop, Signals, Deadline Monitoring
 
-- Status: In Review
+- Status: Complete
 - Owner: AI agent (opencode)
 - Priority: High
 - Depends on: [T-0009](T-0009-worker-core.md)

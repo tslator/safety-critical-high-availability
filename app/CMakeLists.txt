@@ -9,6 +9,8 @@ target_compile_definitions(safety-critical-ha
     SAFETY_CRIT_COMPILER_NAME="${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}"
 )
 
+target_link_libraries(safety-critical-ha PRIVATE safety_crit::workers)
+
 install(TARGETS safety-critical-ha
     RUNTIME DESTINATION bin
 )

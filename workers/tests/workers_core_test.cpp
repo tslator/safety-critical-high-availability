@@ -130,13 +130,13 @@ SAFETY_CRIT_TEST_CASE(WorkersCore, PipelinePolicyExplicitWitness) {
         raw.samples[i].value = static_cast<std::int16_t>(i * 1000 + 3);
         raw.samples[i].signal_to_noise = sn[i];
     }
-    // Accepted positions: SN >= kSnThreshold(96): 0,2,3,5,6,8,9,10,11,12,13,14
-    // -> 12 candidates, exactly at the kMaxOutSamples(12) cap; 15 dropped.
+    // Accepted positions: SN >= kSnThreshold(96): 0,2,3,5,6,8,9,10,11,12,13,14,15
+    // -> 13 candidates, capped by kMaxOutSamples(8); 5 dropped.
     const ProcessedData out = process_sensor_data(raw);
     SAFETY_CRIT_ASSERT(out.worker_idx == 2u);
     SAFETY_CRIT_ASSERT(out.tick == 7u);
     SAFETY_CRIT_ASSERT(out.count == kMaxOutSamples);
-    const std::uint32_t accepted[kMaxOutSamples] = {0, 2, 3, 5, 6, 8, 9, 10, 11, 12, 13, 14};
+    const std::uint32_t accepted[kMaxOutSamples] = {0, 2, 3, 5, 6, 8, 9, 10};
     for (std::uint32_t i = 0; i < kMaxOutSamples; ++i) {
         const std::int32_t expected =
             calibrate(raw.samples[accepted[i]].value);

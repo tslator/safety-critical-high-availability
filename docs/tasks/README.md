@@ -18,8 +18,8 @@ sequential `T-####`; phase-scoped labels such as `T1.3` are aliases. See
 | [T-0007](T-0007-pin-primary-baseline.md) | Phase 0 | Pin the primary build compiler | AI agent (opencode) | Complete | High | None | [DEC-0008](../decisions/0008-clang-supplementary-verification.md), [evidence](../../NOTES.md) |
 | [T-0008](T-0008-clang-verify-pipeline.md) | Phase 0 | Clang supplementary verification pipeline | AI agent (opencode) | Complete | Medium | T-0007 | [DEC-0008](../decisions/0008-clang-supplementary-verification.md), [evidence](../verification/clang-verification.md) |
 | [T-0009](T-0009-worker-core.md) | Phase 2 | T2.1 — worker core (config, workload, pipeline) | AI agent (opencode) | Complete | High | Phase 1 exit | [DEC-0009](../decisions/0009-phase2-worker-runtime.md), [evidence](../../NOTES.md) |
-| [T-0010](T-0010-work-loop-signals-deadlines.md) | Phase 2 | T2.2 — work loop, signals, deadline monitoring | AI agent (opencode) | In Review | High | T-0009 | [DEC-0009](../decisions/0009-phase2-worker-runtime.md) |
-| [T-0011](T-0011-worker-cli-integration-phase-exit.md) | Phase 2 | T2.3 — worker CLI, integration, phase exit | Unassigned | Planned | High | T-0010 | [DEC-0009](../decisions/0009-phase2-worker-runtime.md) |
+| [T-0010](T-0010-work-loop-signals-deadlines.md) | Phase 2 | T2.2 — work loop, signals, deadline monitoring | AI agent (opencode) | Complete | High | T-0009 | [DEC-0009](../decisions/0009-phase2-worker-runtime.md) |
+| [T-0011](T-0011-worker-cli-integration-phase-exit.md) | Phase 2 | T2.3 — worker CLI, integration, phase exit | AI agent (opencode) | In Review | High | T-0010 | [DEC-0009](../decisions/0009-phase2-worker-runtime.md) |
 | T1.1 | Phase 1 | Shared region layout and atomic flags _(roll-up)_ | — | Complete | — | — | [Phase 1 plan](../phases/PHASE_1_SHARED_MEMORY.md) |
 | T1.2 | Phase 1 | Lock-free ring buffer _(roll-up)_ | — | Complete | — | — | [Phase 1 plan](../phases/PHASE_1_SHARED_MEMORY.md), [evidence](../evidence/phase-1.md) |
 | Phase 0 | Phase 0 | Container and tooling (0.1–0.6) _(roll-up)_ | — | Complete | — | — | [Phase 0 plan](../phases/PHASE_0_CONTAINER_AND_TOOLING.md) |

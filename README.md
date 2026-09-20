@@ -77,6 +77,18 @@ The T1.5 stress tests run 1,000,000 operations per case by default in every
 configuration; `-DSAFETY_CRIT_STRESS_OPS=<n>` overrides the volume for
 constrained environments.
 
+Run a Phase 2 worker process (attaches to or creates the shared region,
+pushes processed output onto its own ring, stops on SIGTERM; SIGUSR1 is the
+test-only forced-crash hook):
+
+```bash
+./build/local/app/safety-critical-ha worker --id a [--role hot|standby] \
+	[--ticks N] [--tick-interval-ms MS] [--budget-us US] [--region NAME]
+```
+
+(`--version` remains the container healthcheck command; the default region
+is `/safety_crit_region`.)
+
 Configure in disconnected mode for pre-populated dependency builds:
 
 `FETCHCONTENT_FULLY_DISCONNECTED=ON` requires pre-populated FetchContent

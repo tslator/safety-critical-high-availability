@@ -69,7 +69,8 @@ Authoritative decision: [DEC-0009](../decisions/0009-phase2-worker-runtime.md)
 ### Task T2.1 - Worker Core _(3-4 h)_
 
 **Record:** [T-0009](../tasks/T-0009-worker-core.md) ·
-[DEC-0009](../decisions/0009-phase2-worker-runtime.md)
+[DEC-0009](../decisions/0009-phase2-worker-runtime.md) · Completed
+2026-09-19 (G2.1: [evidence](../../NOTES.md); hosted run 35472130840).
 
 **Dependencies:** Phase 1 exit (G1.1–G1.5).
 
@@ -110,7 +111,8 @@ combine) pass in both frameworks and under ASan+UBSan, zero warnings.
 ### Task T2.2 - Work Loop, Signals, Deadline Monitoring _(3-4 h)_
 
 **Record:** [T-0010](../tasks/T-0010-work-loop-signals-deadlines.md) ·
-[DEC-0009](../decisions/0009-phase2-worker-runtime.md)
+[DEC-0009](../decisions/0009-phase2-worker-runtime.md) · Completed
+2026-09-19 (G2.2: [evidence](../../NOTES.md); hosted run 35473680814).
 
 **Dependencies:** G2.1.
 
@@ -145,7 +147,8 @@ accounting is exact.
 ### Task T2.3 - Worker CLI, Region Lifecycle, Integration, Phase Exit _(4-5 h)_
 
 **Record:** [T-0011](../tasks/T-0011-worker-cli-integration-phase-exit.md) ·
-[DEC-0009](../decisions/0009-phase2-worker-runtime.md)
+Completed 2026-09-19 ([evidence](../../NOTES.md), section "Gate: G2.3 /
+Phase 2 exit"). Hosted exit run to be appended after push.
 
 **Dependencies:** G2.2.
 
