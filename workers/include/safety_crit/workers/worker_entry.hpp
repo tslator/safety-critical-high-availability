@@ -3,6 +3,11 @@
 #include "safety_crit/workers/pidfile.hpp"
 #include "safety_crit/workers/worker_config.hpp"
 
+namespace safety_crit::shared_memory {
+struct SharedRegion;
+struct OwnershipToken;
+}
+
 namespace safety_crit::workers {
 
 // Process-global default shared-memory region name (leading slash included:
@@ -29,6 +34,11 @@ inline constexpr const char* kDefaultRegionName = "/safety_crit_region";
 //
 // Signal handlers are installed for the duration of the call and restored
 // afterwards. The loop's status word is region.worker_status[worker_idx].
+// Reads and validates the ownership record for this physical process. A true
+// result is the worker-side ownership acknowledgement used before publishing.
+bool acknowledge_ownership(const shared_memory::SharedRegion& region,
+                           const WorkerConfig& cfg, shared_memory::OwnershipToken& token);
+
 int run_worker(const WorkerConfig& cfg, const char* region_name,
                const char* pid_dir = kDefaultPidDir);
 

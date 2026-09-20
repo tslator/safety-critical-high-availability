@@ -38,17 +38,29 @@ void sleep_slice_slice(std::chrono::milliseconds total,
 
 int run_hot(shared_memory::SharedRegion& region, const WorkerConfig& cfg,
             signals::SignalState& signal_state) {
+    shared_memory::OwnershipToken ownership;
+    if (!acknowledge_ownership(region, cfg, ownership)) {
+        std::fprintf(stderr, "worker %u: ownership acknowledgement failed\n", cfg.worker_idx);
+        return 3;
+    }
     std::atomic<std::uint64_t>& status = region.worker_status[cfg.worker_idx].status;
     shared_memory::set_status(status, shared_memory::to_bits(shared_memory::WorkerStatusFlag::kRunning));
 
     std::stop_source src;  // never requested; stop rides the signal flag
     auto result = run_work_loop(
         cfg, &status, src.get_token(), signal_state.stop_requested,
-        [&region, &cfg](const ProcessedData& payload) {
-            return shared_memory::push(region, cfg.worker_idx, payload);
+        [&region, &cfg, &ownership, &src](const ProcessedData& payload) {
+            // A process that loses its generation must stop retrying rather
+            // than publish to a ring now owned by its replacement.
+            if (!shared_memory::ownership_valid(region, ownership)) {
+                src.request_stop();
+                return false;
+            }
+            return shared_memory::push(region, ownership.logical_ring, payload);
         },
-        [&cfg](std::uint64_t tick) {
-            return process_sensor_data(generate_raw_tick(cfg.seed_base, cfg.worker_idx, tick));
+        [&cfg, &ownership](std::uint64_t tick) {
+            return process_sensor_data(
+                generate_raw_tick(cfg.seed_base, ownership.logical_ring, tick));
         },
         [&cfg, &signal_state] { sleep_slice_slice(cfg.tick_interval, signal_state.stop_requested); });
 
@@ -69,22 +81,27 @@ int run_standby(shared_memory::SharedRegion& region, const WorkerConfig& cfg,
     std::atomic<std::uint64_t>& status = region.worker_status[cfg.worker_idx].status;
     shared_memory::set_status(status, shared_memory::to_bits(shared_memory::WorkerStatusFlag::kIdle));
 
-    // Warm standby: observe sibling status flags, push nothing (DEC-0009 #8).
-    // Takeover *decisions* are Phase 4 supervisor scope; the standby merely
-    // stays responsive so that phase can promote it.
+    // Warm standby: observe ownership records, push nothing until the
+    // supervisor has transferred one logical ring to this process.
     std::uint64_t polls = 0;
     while (signal_state.stop_requested == 0) {
-        std::uint64_t active_siblings = 0;
-        for (std::size_t i = 0; i < shared_memory::kMaxWorkers; ++i) {
-            if (i == cfg.worker_idx) {
+        for (std::size_t logical_ring = 0; logical_ring < shared_memory::kMaxWorkers;
+             ++logical_ring) {
+            if (cfg.logical_ring != shared_memory::kUnassignedPhysicalOwner &&
+                cfg.logical_ring != logical_ring) {
                 continue;
             }
-            if (shared_memory::load_has_flag(region.worker_status[i].status,
-                                             shared_memory::WorkerStatusFlag::kRunning)) {
-                ++active_siblings;
+            if (cfg.logical_ring == shared_memory::kUnassignedPhysicalOwner &&
+                logical_ring == cfg.worker_idx) {
+                continue;  // the replacement remains standby until assigned
+            }
+            shared_memory::OwnershipToken token;
+            WorkerConfig promoted = cfg;
+            promoted.logical_ring = static_cast<std::uint32_t>(logical_ring);
+            if (acknowledge_ownership(region, promoted, token)) {
+                return run_hot(region, promoted, signal_state);
             }
         }
-        (void)active_siblings;  // observable for a debugger/Phase 3; no writes
         ++polls;
         sleep_slice_slice(std::chrono::milliseconds(100), signal_state.stop_requested);
     }
@@ -94,10 +111,26 @@ int run_standby(shared_memory::SharedRegion& region, const WorkerConfig& cfg,
 }
 }  // namespace
 
+bool acknowledge_ownership(const shared_memory::SharedRegion& region,
+                           const WorkerConfig& cfg, shared_memory::OwnershipToken& token) {
+    if (cfg.logical_ring == shared_memory::kUnassignedPhysicalOwner ||
+        !shared_memory::read_ownership(region, cfg.logical_ring, token)) {
+        return false;
+    }
+    return token.physical_owner == cfg.worker_idx &&
+           token.process_generation == cfg.process_generation;
+}
+
 int run_worker(const WorkerConfig& cfg, const char* region_name, const char* pid_dir) {
     if (!validate_config(cfg)) {
         std::fprintf(stderr, "worker: invalid configuration\n");
         return 2;
+    }
+
+    WorkerConfig effective_cfg = cfg;
+    if (effective_cfg.role == WorkerRole::kHot &&
+        effective_cfg.logical_ring == shared_memory::kUnassignedPhysicalOwner) {
+        effective_cfg.logical_ring = effective_cfg.worker_idx;
     }
 
     shared_memory::SharedRegionHandle handle =
@@ -125,10 +158,10 @@ int run_worker(const WorkerConfig& cfg, const char* region_name, const char* pid
     }
 
     int rc = 0;
-    if (cfg.role == WorkerRole::kHot) {
-        rc = run_hot(*handle.get(), cfg, signal_state);
+    if (effective_cfg.role == WorkerRole::kHot) {
+        rc = run_hot(*handle.get(), effective_cfg, signal_state);
     } else {
-        rc = run_standby(*handle.get(), cfg, signal_state);
+        rc = run_standby(*handle.get(), effective_cfg, signal_state);
     }
 
     // Clean exit only: the IDLE status published above plus pidfile removal

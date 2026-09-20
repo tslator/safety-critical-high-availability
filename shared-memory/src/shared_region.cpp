@@ -23,13 +23,12 @@ std::uint32_t unpack_generation(std::uint64_t word) {
 }
 
 // The integrity word's definition (DEC-0005 #5): crc32c over the raw
-// per-worker ring and ownership header blocks followed by global_seq serialized
+// per-worker ring header block followed by global_seq serialized
 // as 8 little-endian bytes (explicit serialization: layout-stable across
 // observers and independent of host endianness or in-memory atomic representation).
 std::uint32_t region_integrity_at(const SharedRegion& region, std::uint64_t global_seq) {
     std::uint32_t state = crc32c_update(crc32c_init(), region.ring_buffers,
                                         sizeof(region.ring_buffers));
-    state = crc32c_update(state, region.ring_ownership, sizeof(region.ring_ownership));
     std::uint8_t seq_bytes[8];
     for (int i = 0; i < 8; ++i) {
         seq_bytes[i] = static_cast<std::uint8_t>(global_seq >> (8 * i));

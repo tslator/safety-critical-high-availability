@@ -6,6 +6,13 @@ bool validate_config(const WorkerConfig& config) {
     if (config.worker_idx >= shared_memory::kMaxWorkers) {
         return false;
     }
+    if (config.logical_ring != shared_memory::kUnassignedPhysicalOwner &&
+        config.logical_ring >= shared_memory::kMaxWorkers) {
+        return false;
+    }
+    if (config.process_generation == 0u) {
+        return false;
+    }
     if (config.ticks == 0u) {
         return false;
     }

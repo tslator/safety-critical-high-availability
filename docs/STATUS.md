@@ -22,11 +22,12 @@
 | T3.2: pidfile, poll loop, JSON alerts, monitor CLI | Complete | Worker pidfile contract, liveness reader, injected-clock poll loop, snprintf JSON lines, `monitor` subcommand; G3.2 |
 | T3.3: monitor integration and Phase 3 exit | Complete | 4 fork-based scenarios (SIGKILL crash, clean-exit idle, SIGSTOP stall/recovery, standby) x5 stable; exit run 35518074368 |
 | T-0015: ownership and epoch model | Complete | Versioned v4 ownership metadata, generation fencing, CAS promotion, stale-token test; GoogleTest/Catch2 84/84 |
+| T-0016: worker promotion control | Complete | Physical/logical identity separation, generation-aware acknowledgement, stale publication fence, standby promotion controls; GoogleTest/Catch2 85/85 |
 | Phase 4 supervisor and crash failover | In progress | Accepted review D-2026-09-20-002, decision DEC-0011; T-0015 complete, T-0016–T-0022 planned |
 
 ## Next Work
 
-1. T-0016: worker promotion control.
+1. T-0017: supervisor lifecycle and monitor pipe.
 2. Optional tooling follow-ups from DEC-0008: `clang-static-analysis`
    (advisory) and `clang-sanitizers` presets.
 

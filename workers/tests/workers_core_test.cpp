@@ -52,6 +52,14 @@ SAFETY_CRIT_TEST_CASE(WorkersCore, ConfigValidation) {
     // Defaults: a default-constructed config carries sane durations but
     // ticks == 0, so it must NOT validate (tick count is intentional).
     SAFETY_CRIT_ASSERT(!validate_config(kValidConfig));
+
+    bad = make_valid();
+    bad.logical_ring = safety_crit::shared_memory::kMaxWorkers;
+    SAFETY_CRIT_ASSERT(!validate_config(bad));
+
+    bad = make_valid();
+    bad.process_generation = 0;
+    SAFETY_CRIT_ASSERT(!validate_config(bad));
 }
 
 SAFETY_CRIT_TEST_CASE(WorkersCore, Splitmix64ReferenceVectors) {

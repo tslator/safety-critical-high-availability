@@ -21,6 +21,7 @@ namespace {
 void print_usage(std::ostream& out) {
     out << "usage: safety-critical-ha --version\n"
         << "       safety-critical-ha worker --id <a|b|c> [--role hot|standby]\n"
+        << "           [--logical-id <a|b|c>] [--generation N]\n"
         << "           [--ticks N] [--tick-interval-ms MS] [--budget-us US]\n"
         << "           [--region NAME] [--pid-dir DIR]\n"
         << "       safety-critical-ha monitor [--interval-ms MS]\n"
@@ -89,6 +90,28 @@ int run_worker_command(int argc, char* argv[]) {
                 std::cerr << "worker: --role must be hot or standby\n";
                 return 2;
             }
+        } else if (arg == "--logical-id") {
+            if (!next_value(value)) {
+                return 2;
+            }
+            if (value == "a") {
+                cfg.logical_ring = 0;
+            } else if (value == "b") {
+                cfg.logical_ring = 1;
+            } else if (value == "c") {
+                cfg.logical_ring = 2;
+            } else {
+                std::cerr << "worker: --logical-id must be a, b, or c\n";
+                return 2;
+            }
+        } else if (arg == "--generation") {
+            std::uint64_t generation = 0;
+            if (!next_value(value) || !parse_u64(value, generation) || generation == 0u ||
+                generation > UINT32_MAX) {
+                std::cerr << "worker: --generation requires a positive integer\n";
+                return 2;
+            }
+            cfg.process_generation = static_cast<std::uint32_t>(generation);
         } else if (arg == "--ticks") {
             if (!next_value(value) || !parse_u64(value, cfg.ticks)) {
                 std::cerr << "worker: --ticks requires a positive integer\n";

@@ -278,5 +278,47 @@ SAFETY_CRIT_TEST_CASE(workers_integration, StandbyPassivity) {
         fixture.region()->worker_status[0].status, WorkerStatusFlag::kIdle));
 }
 
+SAFETY_CRIT_TEST_CASE(workers_integration, StaleGenerationCannotPublish) {
+    RegionFixture fixture("stale_generation");
+    SAFETY_CRIT_ASSERT(fixture.ok());
+    WorkerConfig cfg = hot_config(0, 100, std::chrono::milliseconds(1));
+    cfg.logical_ring = 0;
+    cfg.process_generation = 1;
+
+    safety_crit::shared_memory::OwnershipToken current;
+    SAFETY_CRIT_ASSERT(safety_crit::shared_memory::read_ownership(*fixture.region(), 0, current));
+    safety_crit::shared_memory::OwnershipToken replacement;
+    SAFETY_CRIT_ASSERT(safety_crit::shared_memory::transfer_ownership(
+        *fixture.region(), 0, current, 2, 2, replacement));
+
+    safety_crit::shared_memory::OwnershipToken acknowledged;
+    SAFETY_CRIT_ASSERT(!safety_crit::workers::acknowledge_ownership(
+        *fixture.region(), cfg, acknowledged));
+    SAFETY_CRIT_ASSERT(fixture.region()->rings[0].pushed() == 0u);
+}
+
+SAFETY_CRIT_TEST_CASE(workers_integration, PromotionAcknowledgementUsesNewGeneration) {
+    RegionFixture fixture("promotion_ack");
+    SAFETY_CRIT_ASSERT(fixture.ok());
+
+    WorkerConfig promoted = hot_config(2, 1, std::chrono::milliseconds(1));
+    promoted.role = WorkerRole::kStandby;
+    promoted.logical_ring = 0;
+    promoted.process_generation = 7;
+
+    safety_crit::shared_memory::OwnershipToken initial;
+    SAFETY_CRIT_ASSERT(safety_crit::shared_memory::read_ownership(*fixture.region(), 0, initial));
+    safety_crit::shared_memory::OwnershipToken replacement;
+    SAFETY_CRIT_ASSERT(safety_crit::shared_memory::transfer_ownership(
+        *fixture.region(), 0, initial, promoted.worker_idx, promoted.process_generation,
+        replacement));
+
+    safety_crit::shared_memory::OwnershipToken acknowledged;
+    SAFETY_CRIT_ASSERT(safety_crit::workers::acknowledge_ownership(
+        *fixture.region(), promoted, acknowledged));
+    SAFETY_CRIT_ASSERT(acknowledged.logical_ring == 0u);
+    SAFETY_CRIT_ASSERT(acknowledged.epoch == replacement.epoch);
+}
+
 #endif  // SAFETY_CRIT_P2_SANITIZED
 }  // namespace

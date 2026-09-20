@@ -25,7 +25,11 @@ enum class WorkerRole : std::uint8_t {
 // Determinism ("same input -> same output", plan test #1) therefore means:
 // same (seed_base, worker_idx, tick) -> byte-identical processed output.
 struct WorkerConfig {
+    // worker_idx is the physical process identity. logical_ring is the ring
+    // this process may publish to; an unassigned standby scans for promotion.
     std::uint32_t worker_idx{0};
+    std::uint32_t logical_ring{shared_memory::kUnassignedPhysicalOwner};
+    std::uint32_t process_generation{1};
     WorkerRole role{WorkerRole::kHot};
     std::uint64_t ticks{0};
     std::chrono::milliseconds tick_interval{10};

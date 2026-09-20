@@ -24,5 +24,15 @@ This record is the evidence target for
 - Catch2: 84/84 passed in `build/t0015-catch2`.
 - Ownership test: stale generation/epoch token rejected after CAS promotion.
 
+## T-0016 Result
+
+- Implementation: worker physical/logical identity separation, generation-aware
+  ownership acknowledgement, publication fencing, standby promotion startup,
+  and CLI controls in `workers/` and `app/`.
+- GoogleTest: 85/85 passed in `build/t0015-gtest`.
+- Catch2: 85/85 passed in `build/t0015-catch2`.
+- Worker tests reject stale generations before publication and verify promoted
+  physical C acknowledges logical A at the new generation and epoch.
+
 Each closed task must link implementation and durable command/result evidence
 here or in `NOTES.md`.
