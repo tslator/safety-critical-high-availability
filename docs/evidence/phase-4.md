@@ -34,5 +34,18 @@ This record is the evidence target for
 - Worker tests reject stale generations before publication and verify promoted
   physical C acknowledges logical A at the new generation and epoch.
 
+## T-0017 Result
+
+- Implementation: management-plane supervisor library and `supervisor` CLI
+  command in `supervisor/` and `app/`.
+- Shared-memory identity is verified before monitor and worker launch.
+- Monitor stdout is consumed through a pipe; strict alert/report validation
+  rejects malformed, unknown, duplicate, partial, and EOF input deterministically.
+- Shutdown sends SIGTERM, applies bounded SIGKILL fallback, and reaps all
+  children.
+- GoogleTest: 90/90 passed in `build/t0015-gtest`.
+- Catch2: 90/90 passed in `build/t0015-catch2`.
+- Lifecycle integration test launched the topology and verified clean cleanup.
+
 Each closed task must link implementation and durable command/result evidence
 here or in `NOTES.md`.

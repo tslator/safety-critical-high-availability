@@ -1,0 +1,3 @@
+add_executable(supervisor_test supervisor_test.cpp)
+target_link_libraries(supervisor_test PRIVATE safety_crit::supervisor)
+safety_crit_register_tests(supervisor_test)

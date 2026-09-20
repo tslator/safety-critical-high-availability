@@ -8,6 +8,7 @@
 #include "safety_crit/monitors/monitor_config.hpp"
 #include "safety_crit/monitors/monitor_entry.hpp"
 #include "safety_crit/monitors/pidfile_liveness.hpp"
+#include "safety_crit/supervisor/supervisor.hpp"
 #include "safety_crit/workers/pidfile.hpp"
 #include "safety_crit/workers/worker_config.hpp"
 #include "safety_crit/workers/worker_entry.hpp"
@@ -26,7 +27,9 @@ void print_usage(std::ostream& out) {
         << "           [--region NAME] [--pid-dir DIR]\n"
         << "       safety-critical-ha monitor [--interval-ms MS]\n"
         << "           [--stall-threshold-ms MS] [--region NAME]\n"
-        << "           [--pid-dir DIR] [--polls N]\n";
+        << "           [--pid-dir DIR] [--polls N]\n"
+        << "       safety-critical-ha supervisor [--runtime-ms MS]\n"
+        << "           [--region NAME] [--pid-dir DIR] [--ticks N]\n";
 }
 
 bool parse_u64(std::string_view text, std::uint64_t& out) {
@@ -224,6 +227,38 @@ int run_monitor_command(int argc, char* argv[]) {
     return safety_crit::monitors::run_monitor(cfg, region, pid_dir, polls);
 }
 
+int run_supervisor_command(int argc, char* argv[]) {
+    safety_crit::supervisor::SupervisorConfig cfg{};
+    for (int i = 2; i < argc; ++i) {
+        const std::string_view arg(argv[i]);
+        if (i + 1 >= argc) {
+            std::cerr << "supervisor: missing value for " << arg << "\n";
+            return 2;
+        }
+        const std::string_view value(argv[++i]);
+        std::uint64_t parsed = 0;
+        if (arg == "--runtime-ms") {
+            if (!parse_u64(value, parsed)) {
+                return 2;
+            }
+            cfg.runtime_ms = parsed;
+        } else if (arg == "--ticks") {
+            if (!parse_u64(value, parsed) || parsed == 0) {
+                return 2;
+            }
+            cfg.worker_ticks = parsed;
+        } else if (arg == "--region" && value.size() >= 2 && value[0] == '/') {
+            cfg.region_name = argv[i];
+        } else if (arg == "--pid-dir" && !value.empty()) {
+            cfg.pid_dir = argv[i];
+        } else {
+            std::cerr << "supervisor: unknown or invalid option: " << arg << "\n";
+            return 2;
+        }
+    }
+    return safety_crit::supervisor::run_supervisor(cfg);
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -237,6 +272,9 @@ int main(int argc, char* argv[]) {
     }
     if (argc >= 2 && std::string_view(argv[1]) == "monitor") {
         return run_monitor_command(argc, argv);
+    }
+    if (argc >= 2 && std::string_view(argv[1]) == "supervisor") {
+        return run_supervisor_command(argc, argv);
     }
     print_usage(std::cerr);
     return 1;
