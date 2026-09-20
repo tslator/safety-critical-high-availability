@@ -16,5 +16,13 @@ This record is the evidence target for
 - Privileged priority enforcement and unprivileged fallback.
 - Docker build and real-process Compose failover validation.
 
+## T-0015 Result
+
+- Implementation: v4 `RingOwnershipCell` metadata and control-plane ownership
+  APIs in `shared-memory/`.
+- GoogleTest: 84/84 passed in `build/t0015-gtest`.
+- Catch2: 84/84 passed in `build/t0015-catch2`.
+- Ownership test: stale generation/epoch token rejected after CAS promotion.
+
 Each closed task must link implementation and durable command/result evidence
 here or in `NOTES.md`.

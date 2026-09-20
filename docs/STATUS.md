@@ -21,13 +21,12 @@
 | T3.1: monitor core | Complete | Config validation, health classification + alert vocabulary (DEC-0010 #3), latched state machine; G3.1 |
 | T3.2: pidfile, poll loop, JSON alerts, monitor CLI | Complete | Worker pidfile contract, liveness reader, injected-clock poll loop, snprintf JSON lines, `monitor` subcommand; G3.2 |
 | T3.3: monitor integration and Phase 3 exit | Complete | 4 fork-based scenarios (SIGKILL crash, clean-exit idle, SIGSTOP stall/recovery, standby) x5 stable; exit run 35518074368 |
-| Phase 4 planning: supervisor and crash failover | In progress | Accepted review D-2026-09-20-002, decision DEC-0011, tasks T-0015–T-0022; implementation not started |
+| T-0015: ownership and epoch model | Complete | Versioned v4 ownership metadata, generation fencing, CAS promotion, stale-token test; GoogleTest/Catch2 84/84 |
+| Phase 4 supervisor and crash failover | In progress | Accepted review D-2026-09-20-002, decision DEC-0011; T-0015 complete, T-0016–T-0022 planned |
 
 ## Next Work
 
-1. Phase 4 implementation kickoff: ownership/epoch model, worker promotion,
-   supervisor lifecycle, crash failover, continuity witness, scheduling, and
-   real Compose runtime wiring.
+1. T-0016: worker promotion control.
 2. Optional tooling follow-ups from DEC-0008: `clang-static-analysis`
    (advisory) and `clang-sanitizers` presets.
 

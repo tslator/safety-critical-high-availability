@@ -13,7 +13,7 @@ enum class WorkerStatusFlag : std::uint64_t {
     kRecovering = 1ULL << 3,
     // Phase 2 (DEC-0009 #4): per-tick CPU budget exceeded at least once since
     // the last clear. Semantics addition only -- the status word layout is
-    // unchanged, so kRegionVersion stays 3.
+    // unchanged.
     kOverrun = 1ULL << 4,
 };
 

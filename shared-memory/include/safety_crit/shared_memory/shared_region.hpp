@@ -16,9 +16,11 @@ inline constexpr std::size_t kMaxWorkers = 3;
 // Version history: v1 (T1.1) had no slot storage; v2 (T1.2) embeds one
 // RingBuffer per worker and fills the ring headers at initialization; v3
 // (T1.3) adds a per-slot CRC field to each cell (payload 56 -> 52 bytes, cell
-// still exactly one cache line) plus a per-ring corruption counter.
+// still exactly one cache line) plus a per-ring corruption counter. v4 (T-0015)
+// adds logical-ring ownership and process-generation fencing.
 inline constexpr std::uint32_t kRegionMagic = 0x53484D41u;
-inline constexpr std::uint32_t kRegionVersion = 3u;
+inline constexpr std::uint32_t kRegionVersion = 4u;
+inline constexpr std::uint32_t kUnassignedPhysicalOwner = 0xFFFFFFFFu;
 
 // Project-wide default ring dimensions (T1.2). All workers and all processes
 // build with the same values: the slot arrays are part of this struct, so the
@@ -50,6 +52,24 @@ struct alignas(64) RingBufferHeader {
     char padding[40];              // explicit pad to a full cache line
 };
 
+// Management-plane ownership state. It is separate from ring counters so
+// promotion does not modify the lock-free push/pop protocol. owner_word packs
+// physical owner in the low 32 bits and process generation in the high 32 bits.
+struct alignas(64) RingOwnershipCell {
+    std::atomic<std::uint64_t> epoch{0};
+    std::atomic<std::uint64_t> owner_word{0};
+    std::uint32_t logical_ring{0};
+    std::uint32_t reserved0{0};
+    char padding[40]{};
+};
+
+struct OwnershipToken {
+    std::uint32_t logical_ring{0};
+    std::uint32_t physical_owner{kUnassignedPhysicalOwner};
+    std::uint32_t process_generation{0};
+    std::uint64_t epoch{0};
+};
+
 // One 64-byte cell per worker so concurrent status updates from different
 // workers never share a cache line. This implements the plan's
 // "no shared cache lines" requirement directly, which the plan sketch's
@@ -66,6 +86,7 @@ struct alignas(64) SharedRegion {
 
     Identity identity;                                   // offset 0
     RingBufferHeader ring_buffers[kMaxWorkers];          // one cache line each
+    RingOwnershipCell ring_ownership[kMaxWorkers];        // one cache line each
     WorkerStatusCell worker_status[kMaxWorkers];         // one cache line each
     // One ring per worker. Each RingBuffer is just over 64 KiB with the
     // default dimensions, so a full region is ~193 KiB -- well within the
@@ -86,6 +107,7 @@ struct alignas(64) SharedRegion {
 // (Kept outside the class body: sizeof/incomplete-type rules.)
 static_assert(alignof(SharedRegion) == 64);
 static_assert(sizeof(RingBufferHeader) == 64);
+static_assert(sizeof(RingOwnershipCell) == 64);
 static_assert(sizeof(WorkerStatusCell) == 64);
 static_assert(alignof(RingBuffer) == 64);
 static_assert(sizeof(RingBuffer) % 64 == 0);
@@ -107,6 +129,17 @@ static_assert(sizeof(SharedRegion) % 64 == 0);
 bool initialize(SharedRegion& region,
                 std::uint64_t slot_count = kDefaultSlotCount,
                 std::uint32_t slot_bytes = static_cast<std::uint32_t>(kDefaultSlotBytes));
+
+// Control-plane ownership operations. They are intentionally not called from
+// push/pop. A successful transfer advances epoch and changes owner/generation
+// in one CAS, fencing stale process instances. Abandoned producer claims are
+// not reclaimed in place; callers establish quiescence before verification.
+bool read_ownership(const SharedRegion& region, std::size_t logical_ring,
+                    OwnershipToken& out);
+bool transfer_ownership(SharedRegion& region, std::size_t logical_ring,
+                        const OwnershipToken& expected, std::uint32_t new_physical_owner,
+                        std::uint32_t new_process_generation, OwnershipToken& replacement);
+bool ownership_valid(const SharedRegion& region, const OwnershipToken& token);
 
 // Quiescence-independent attachment checks (plan section 3): identity and
 // version match and every RingBufferHeader records the compiled-in
@@ -132,8 +165,8 @@ bool verify_worker_ring(const SharedRegion& region, std::size_t worker_idx);
 // mid-operation and may report false for perfectly healthy traffic.
 bool verify(const SharedRegion& region);
 
-// T1.3: crc32c over the per-worker header block (the raw ring_buffers[] words,
-// written once by initialize) followed by the *observed* global_seq as 8
+// T1.3: crc32c over the per-worker ring header block (the raw ring_buffers[]
+// words, written once by initialize) followed by the *observed* global_seq as 8
 // little-endian bytes -- i.e., what a healthy quiescent region stores in
 // integrity_word. Observers and tests recompute it; identity is deliberately
 // not covered (verify_identity() already checks those words against

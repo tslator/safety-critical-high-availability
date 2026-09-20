@@ -1,7 +1,7 @@
 # T-0015: Phase 4 Ownership and Epoch Model
 
-- Status: Planned
-- Owner: Unassigned
+- Status: Complete
+- Owner: AI agent (opencode)
 - Priority: High
 - Depends on: T-0014
 - Phase: Phase 4
@@ -21,4 +21,10 @@ epoch/generation fencing and any controlled shared-memory v4 layout.
 
 ## Evidence
 
-Record implementation links and matrix results in [Phase 4 evidence](../evidence/phase-4.md).
+Implementation: `shared-memory/include/safety_crit/shared_memory/shared_region.hpp`,
+`shared-memory/src/shared_region.cpp`, and
+`shared-memory/tests/shared_region_layout_test.cpp`.
+
+Validation: GoogleTest and Catch2 builds and CTest runs passed, 84/84 tests in
+each configuration. The new `SharedRegion.OwnershipFencesStaleGeneration`
+test proves promotion changes the epoch/generation and rejects the stale token.

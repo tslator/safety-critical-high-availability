@@ -23,7 +23,7 @@ sequential `T-####`; phase-scoped labels such as `T1.3` are aliases. See
 | [T-0012](T-0012-monitor-core.md) | Phase 3 | T3.1 — monitor core (config, health algorithm) | AI agent (opencode) | Complete | High | Phase 2 exit | [DEC-0010](../decisions/0010-phase3-monitor-daemon.md), [evidence](../../NOTES.md) |
 | [T-0013](T-0013-crash-detection-json-alerts-cli.md) | Phase 3 | T3.2 — pidfile liveness, poll loop, JSON alerts, monitor CLI | AI agent (opencode) | Complete | High | T-0012 | [DEC-0010](../decisions/0010-phase3-monitor-daemon.md) |
 | [T-0014](T-0014-monitor-integration-phase-exit.md) | Phase 3 | T3.3 — monitor integration, phase exit | AI agent (opencode) | Complete | High | T-0013 | [DEC-0010](../decisions/0010-phase3-monitor-daemon.md) |
-| [T-0015](T-0015-phase4-ownership-epoch.md) | Phase 4 | Ownership and epoch model | Unassigned | Planned | High | T-0014 | [DEC-0011](../decisions/0011-phase4-supervisor-failover.md) |
+| [T-0015](T-0015-phase4-ownership-epoch.md) | Phase 4 | Ownership and epoch model | AI agent (opencode) | Complete | High | T-0014 | [DEC-0011](../decisions/0011-phase4-supervisor-failover.md) |
 | [T-0016](T-0016-worker-promotion-control.md) | Phase 4 | Worker promotion control | Unassigned | Planned | High | T-0015 | [DEC-0011](../decisions/0011-phase4-supervisor-failover.md) |
 | [T-0017](T-0017-supervisor-lifecycle-monitor-pipe.md) | Phase 4 | Supervisor lifecycle and monitor pipe | Unassigned | Planned | High | T-0015 | [DEC-0011](../decisions/0011-phase4-supervisor-failover.md) |
 | [T-0018](T-0018-crash-failover-replacement.md) | Phase 4 | Crash failover and replacement | Unassigned | Planned | High | T-0016, T-0017 | [DEC-0011](../decisions/0011-phase4-supervisor-failover.md) |
