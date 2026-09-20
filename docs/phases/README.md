@@ -25,3 +25,5 @@ The high-level roadmap remains in
 
 - [Phase 0 - Container and Tooling](PHASE_0_CONTAINER_AND_TOOLING.md)
 - [Phase 1 - Shared Memory](PHASE_1_SHARED_MEMORY.md)
+- [Phase 2 - Worker Processes](PHASE_2_WORKERS.md)
+- [Phase 3 - Monitor Daemon](PHASE_3_MONITOR_DAEMON.md)
