@@ -1,6 +1,6 @@
 # T-0011: Phase 2 T2.3 — Worker CLI, Region Lifecycle, Integration, Phase Exit
 
-- Status: In Review (implementation + local validation done; awaiting hosted CI exit run)
+- Status: Complete
 - Owner: AI agent (opencode)
 - Priority: High
 - Depends on: [T-0010](T-0010-work-loop-signals-deadlines.md)
@@ -47,7 +47,8 @@ Recorded 2026-09-19 in [`NOTES.md`](../../NOTES.md) (section "Gate: G2.3 /
 Phase 2 exit"): CLI matrix 63/63 both frameworks (60/60 sanitizer legs,
 fork skip-pass), clang-verify 63/63, integration cases (a)-(d) green, manual
 CLI witnesses (rc=0 clean paths, rc=2 invalid inputs, real-budget overruns,
-standby SIGTERM). Hosted exit run ID appended at completion.
+standby SIGTERM). Hosted exit run 35485369860 on commit d00526b: all ten
+jobs succeeded.
 
 ## Completion Notes
 

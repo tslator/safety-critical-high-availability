@@ -148,7 +148,8 @@ accounting is exact.
 
 **Record:** [T-0011](../tasks/T-0011-worker-cli-integration-phase-exit.md) ·
 Completed 2026-09-19 ([evidence](../../NOTES.md), section "Gate: G2.3 /
-Phase 2 exit"). Hosted exit run to be appended after push.
+Phase 2 exit"). Hosted exit run 35485369860 on commit d00526b: 10/10 jobs
+green — **Phase 2 exit gate satisfied**.
 
 **Dependencies:** G2.2.
 

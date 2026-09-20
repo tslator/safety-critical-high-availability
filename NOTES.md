@@ -314,7 +314,7 @@ New: `safety-critical-ha worker` subcommand (hand-rolled parsing: --id a|b|c, --
 |Integration (d) StandbyPassivity|PASS - rings untouched (pushed == consumed == 0); exits 0 on SIGTERM|
 |CLI manual witness|PASS - `--version` unchanged; hot 50 ticks rc=0; `--budget-us 5` witnessed 2 real-clock overruns; missing/invalid args rc=2; standby SIGTERM rc=0|
 |`./scripts/sync-agent-guidance.sh --check`|PASS - adapters byte-identical (CORE.md untouched)|
-|Hosted CI / Phase Exit Gate|Pending run on the T-0011 commit - append run ID at completion|
+|Hosted CI / Phase Exit Gate|PASS - run 35485369860 on commit d00526b (2026-09-19): all ten jobs succeeded — **Phase 2 exit gate satisfied**|
 
 Phase Exit Gate table:
 | Required evidence | Source | Status |
@@ -323,4 +323,4 @@ Phase Exit Gate table:
 | Loop cancellation/deadline clean under sanitizers | G2.2 | PASS (NOTES "G2.2"; hosted 35473680814) |
 | Integration a-d | G2.3 | PASS (above) |
 | Full local matrix green | exit | PASS (above) |
-| Hosted CI green on exit commit | exit | pending first run |
+| Hosted CI green on exit commit | exit | PASS (run 35485369860 on d00526b) |
