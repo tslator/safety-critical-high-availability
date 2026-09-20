@@ -5,7 +5,11 @@
 Phase 0 is complete. Phase 1 is complete: the shared-memory layout, atomic
 worker flags, lock-free ring buffer, CRC-32C integrity, named shared-memory
 attach, and 1M-op MPMC stress verification are implemented and covered by the
-test, sanitizer, and clang-verify matrices. Workers, supervisors, and fault
+test, sanitizer, and clang-verify matrices. Phase 2 is complete: worker
+processes with deterministic workloads, deadline monitoring, clean shutdown,
+and a forced-crash hook. Phase 3 is complete: the monitor daemon observes
+worker status cells and pidfile liveness and publishes crash/stall/recovery
+detections as structured JSON lines. Supervisors, failover, and fault
 injection remain planned for later phases.
 
 See [project status](docs/STATUS.md) for the current phase table and next
@@ -83,11 +87,28 @@ test-only forced-crash hook):
 
 ```bash
 ./build/local/app/safety-critical-ha worker --id a [--role hot|standby] \
-	[--ticks N] [--tick-interval-ms MS] [--budget-us US] [--region NAME]
+	[--ticks N] [--tick-interval-ms MS] [--budget-us US] [--region NAME] \
+	[--pid-dir DIR]
 ```
 
 (`--version` remains the container healthcheck command; the default region
-is `/safety_crit_region`.)
+is `/safety_crit_region` and the default pid directory is `/tmp`. The worker
+publishes `<dir>/safety_crit_worker_<idx>.pid` after attach and removes it
+only on clean exit.)
+
+Run the Phase 3 monitor process (attaches read-only to the shared region,
+polls the worker status cells and ring counters, liveness-probes worker
+pidfiles, and prints one JSON alert line per state change plus a shutdown
+`monitor_report` line; stops on SIGTERM/SIGINT):
+
+```bash
+./build/local/app/safety-critical-ha monitor [--interval-ms MS] \
+	[--stall-threshold-ms MS] [--region NAME] [--pid-dir DIR] [--polls N]
+```
+
+(Defaults: 10 ms poll interval, 100 ms stall threshold; `--polls N` bounds
+the loop for testing. Alert vocabulary: `worker_crashed`, `worker_stalled`,
+`worker_recovered`, `worker_overrun`, `worker_idle`, `worker_running`.)
 
 Configure in disconnected mode for pre-populated dependency builds:
 

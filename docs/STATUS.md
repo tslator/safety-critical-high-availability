@@ -1,8 +1,8 @@
 # Project Status
 
-- Current phase: Phase 2 complete (G2.1–G2.3 + exit gate) — Phase 3 planning next
-- Current gate: G2.3 complete (Phase 2 exit, hosted run 35485369860)
-- Last updated: 2026-09-19
+- Current phase: Phase 3 complete (G3.1–G3.3 + exit gate) — Phase 4 supervisor planning next
+- Current gate: G3.3 complete (Phase 3 exit, hosted run 35518074368)
+- Last updated: 2026-09-20
 
 ## Phase Status
 
@@ -18,13 +18,16 @@
 | T1.3: CRC integrity and corruption detection | Complete | In-cell CRC-32C (layout v3), skip-and-count corruption path, region integrity word |
 | T1.4: shared-memory attach/detach | Complete | Named `/dev/shm` create-or-open/stale rejection; `SharedRegionHandle` RAII; `MADV_DONTFORK`; cross-process re-attach |
 | T1.5: stress tests and Phase 1 exit | Complete | 1M-op MPMC stress (1Px4C, 4Px4C) with exactly-once accounting; 44/44 in all configs incl. TSan and clang-verify; hosted exit run 35463176042 |
+| T3.1: monitor core | Complete | Config validation, health classification + alert vocabulary (DEC-0010 #3), latched state machine; G3.1 |
+| T3.2: pidfile, poll loop, JSON alerts, monitor CLI | Complete | Worker pidfile contract, liveness reader, injected-clock poll loop, snprintf JSON lines, `monitor` subcommand; G3.2 |
+| T3.3: monitor integration and Phase 3 exit | Complete | 4 fork-based scenarios (SIGKILL crash, clean-exit idle, SIGSTOP stall/recovery, standby) x5 stable; exit run 35518074368 |
 
 ## Next Work
 
-1. Phase 3 kickoff (monitor daemon): poll `worker_status` cells (incl.
-   `OVERRUN`), stall detection via unchanged head/tail counters, metrics
-   collection — the Phase 2 handoff contract. Discussion/decision + task
-   records first.
+1. Phase 4 kickoff (supervisor): consume the monitor's alert stream, promote
+   the standby on `worker_crashed`, restart victims as standby, enforce the
+   failover budget — the Phase 3 handoff contract. Discussion/decision +
+   task records first.
 2. Optional tooling follow-ups from DEC-0008: `clang-static-analysis`
    (advisory), `clang-sanitizers` presets, `COPY_ONLY` dev-warning cleanup.
 

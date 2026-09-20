@@ -67,9 +67,8 @@ Authoritative decision: [DEC-0010](../decisions/0010-phase3-monitor-daemon.md)
 ### Task T3.1 - Monitor Core _(3-4 h)_
 
 **Record:** [T-0012](../tasks/T-0012-monitor-core.md) ·
-[DEC-0010](../decisions/0010-phase3-monitor-daemon.md) · Code complete
-2026-09-20, In Review (G3.1 local green: [evidence](../../NOTES.md);
-hosted CI pending).
+[DEC-0010](../decisions/0010-phase3-monitor-daemon.md) · Complete
+2026-09-20 (G3.1 green: [evidence](../../NOTES.md)).
 
 **Dependencies:** Phase 2 exit (G2.1–G2.3).
 
@@ -115,9 +114,8 @@ ASan+UBSan, zero warnings.
 ### Task T3.2 - Pidfile, Poll Loop, JSON Alerts, Monitor CLI _(4-5 h)_
 
 **Record:** [T-0013](../tasks/T-0013-crash-detection-json-alerts-cli.md) ·
-[DEC-0010](../decisions/0010-phase3-monitor-daemon.md) · Code complete
-2026-09-20, In Review (G3.2 local green: [evidence](../../NOTES.md);
-hosted CI pending).
+[DEC-0010](../decisions/0010-phase3-monitor-daemon.md) · Complete
+2026-09-20 (G3.2 green: [evidence](../../NOTES.md)).
 
 **Dependencies:** G3.1.
 
@@ -161,10 +159,9 @@ deterministic, and cancellation is clean under sanitizers.
 ### Task T3.3 - Monitor Integration, Phase Exit _(3-4 h)_
 
 **Record:** [T-0014](../tasks/T-0014-monitor-integration-phase-exit.md) ·
-[DEC-0010](../decisions/0010-phase3-monitor-daemon.md) · Code complete
-2026-09-20, In Review (G3.3 local green: [evidence](../../NOTES.md);
-hosted CI pending — **Phase 3 exit gate not yet satisfied until hosted CI
-is green**).
+[DEC-0010](../decisions/0010-phase3-monitor-daemon.md) · Complete
+2026-09-20 (G3.3 green: [evidence](../../NOTES.md); hosted CI run
+35518074368 on commit e4cb5ab — **Phase 3 exit gate satisfied**).
 
 **Dependencies:** G3.2.
 

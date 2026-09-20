@@ -324,3 +324,67 @@ Phase Exit Gate table:
 | Integration a-d | G2.3 | PASS (above) |
 | Full local matrix green | exit | PASS (above) |
 | Hosted CI green on exit commit | exit | PASS (run 35485369860 on d00526b) |
+
+---
+
+Gate: G3.1 (Phase 3 T3.1 - monitor core; T-0012)
+Date: 2026-09-20
+Host: x86_64 Linux, `g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0`; clang leg in the pinned `safety-critical-ha:verify-clang-14` image
+
+New: `monitors/` static library `safety_crit::monitors` (C++20, warnings, sanitizers; standard test wiring; root CMakeLists + ARCHITECTURE/ARCHITECTURE_RULES ownership rows updated). `monitor_config.hpp/.cpp` (poll interval default 10 ms, stall threshold default 100 ms, validation: positive and threshold >= interval), `health.hpp` region-agnostic classification core: alert vocabulary strings per DEC-0010 #3 (`worker_crashed`/`worker_stalled`/`worker_recovered`/`worker_overrun`/`worker_idle`/`worker_running`), `HealthState`, `WorkerObservation` (status word, ring tail, liveness), `WorkerTrack` latches (stall until tail advances, crash until process returns, overrun until observed clear), `observe_worker` with at most one alert per poll, priority crashed > episode edge > recovered/stalled > overrun; fake clock injected (DEC-0009 #2 pattern).
+
+|Command / Check|Result|
+|---|---|
+|GoogleTest (fresh dir)|PASS - 83/83 (73 pre-existing + 10 health), zero warnings|
+|Catch2 (fresh dir)|PASS - 83/83|
+|ASan+UBSan (GoogleTest, fresh dir)|PASS - no diagnostics|
+|clang-verify (pinned image)|PASS - zero clang warnings|
+|Health classification matrix|PASS - exhaustive `monitors_health_test`: idle/running, stall latch + release on tail advance, crash latch + recovery on liveness return, overrun latch + clear, priority ordering, at-most-one-alert-per-poll, episode-edge dedupe — identical under both frameworks|
+
+---
+
+Gate: G3.2 (Phase 3 T3.2 - pidfile, poll loop, JSON alerts, monitor CLI; T-0013)
+Date: 2026-09-20
+Host: x86_64 Linux, `g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0`; clang leg in the pinned `safety-critical-ha:verify-clang-14` image
+
+New: `workers/pidfile.hpp/.cpp` (contract path `<dir>/safety_crit_worker_<idx>.pid`, atomic publish temp+rename, removal on clean exit only; `run_worker` writes after attach — fatal on failure — and removes at the end; `--pid-dir` on the worker subcommand), `monitors/pidfile_liveness.hpp/.cpp` (parse + range-check, `kill(pid, 0)` probe with EPERM = alive; stale/malformed = dead per DEC-0010 #2), `monitor_loop.hpp` (status + `tail_` acquire loads, injected liveness/clock/pacer, stop via `stop_token`/`sig_atomic_t`, one shared timestamp per poll, alerts attributed to `MonitorStats`, bounded stop latency; `interval_pacer` 1 ms slices), `json_lines.hpp/.cpp` (alert line + shutdown `monitor_report`, snprintf per deviation #1, flushed immediately), `monitor_entry.cpp` `run_monitor` (create-or-open attach + metadata-only `verify_identity`, signal wiring reused from `workers::signals`, final report), `monitor` subcommand in `app/` (hand-rolled parsing, rc=2 on invalid).
+
+|Command / Check|Result|
+|---|---|
+|GoogleTest / Catch2 (fresh dirs)|PASS - 83/83 each|
+|ASan+UBSan (GoogleTest, fresh dir)|PASS - 77/77 (fork integration skip-pass), no diagnostics|
+|TSan x2 (GoogleTest + Catch2, setarch harness)|PASS - 77/77 each, no data-race reports (loop cancellation + status/tail traffic clean)|
+|clang-verify (pinned image)|PASS - 83/83, zero clang warnings|
+|Loop witnesses (`monitors_loop_test`)|PASS - exact poll accounting; stall/recovery through real ring counters; crash via injected verdict; clean-exit idle; bounded stop latency; exact-string JSON formats for alert and `monitor_report` lines|
+|Pidfile contract (`WorkersPidfile.ContractPathWriteRemove`)|PASS - contract path, atomic publish, write/remove lifecycle|
+
+---
+
+Gate: G3.3 / Phase 3 exit (T-0014)
+Date: 2026-09-20
+Host: x86_64 Linux, `g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0`; clang leg in the pinned `safety-critical-ha:verify-clang-14` image
+
+New: `monitors_integration_test` (fork-based, plain build only; sanitizer skip-pass per G1.4/G2.3 precedent), README monitor command docs, Phase 3 exit evidence.
+
+|Command / Check|Result|
+|---|---|
+|GoogleTest (fresh dir)|PASS - 83/83 (79 pre-existing + 4 integration), zero warnings|
+|Catch2 (fresh dir)|PASS - 83/83|
+|ASan+UBSan / TSan x2 (fresh dirs, setarch harness)|PASS - 77/77 each (4 monitor fork cases replaced by the sanitizer skip-pass); no diagnostics|
+|clang-verify (pinned image)|PASS - 83/83, zero clang warnings|
+|Integration (a) CrashDetectionSigkill|PASS - hot worker + monitor, SIGKILL -> `worker_crashed` exactly once, report crash count 1, stale pidfile left behind and rejected via liveness|
+|Integration (b) CleanExitIdle|PASS - worker finishes cleanly -> `worker_idle`, no crash event, pidfile removed|
+|Integration (c) StallRecoverySigstop|PASS - SIGSTOP -> `worker_stalled` (never crashed; liveness passes while stopped), SIGCONT -> `worker_recovered`|
+|Integration (d) StandbyStandby|PASS - standby -> `worker_idle` alive, no crash, rings untouched|
+|Integration stability|PASS - 5 consecutive repetitions of the 4-scenario set, all green|
+|`./scripts/sync-agent-guidance.sh --check`|PASS - adapters byte-identical (CORE.md untouched)|
+|Hosted CI / Phase Exit Gate|PASS - run 35518074368 on commit e4cb5ab (2026-09-20): all ten jobs succeeded — **Phase 3 exit gate satisfied**|
+
+Phase Exit Gate table:
+| Required evidence | Source | Status |
+|---|---|---|
+| Health classification matrix deterministic (both frameworks) | G3.1 | PASS (NOTES "G3.1") |
+| Loop accounting + pidfile contract clean under sanitizers | G3.2 | PASS (NOTES "G3.2"; TSan/ASan+UBSan above) |
+| Integration: crash-on-SIGKILL, clean-exit idle, stall/recovery, standby | G3.3 | PASS (above) |
+| Full local matrix green | exit | PASS (above) |
+| Hosted CI green on exit commit | exit | PASS (run 35518074368 on e4cb5ab) |

@@ -1,6 +1,6 @@
 # T-0012: Phase 3 T3.1 — Monitor Core
 
-- Status: In Review
+- Status: Complete
 - Owner: AI agent (opencode)
 - Priority: High
 - Depends on: Phase 2 exit (G2.1–G2.3)

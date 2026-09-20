@@ -1,6 +1,6 @@
 # T-0013: Phase 3 T3.2 — Pidfile Liveness, Poll Loop, JSON Alerts, Monitor CLI
 
-- Status: In Review
+- Status: Complete
 - Owner: AI agent (opencode)
 - Priority: High
 - Depends on: T-0012
