@@ -1,7 +1,7 @@
 # T-0018: Phase 4 Crash Failover and Replacement
 
-- Status: Planned
-- Owner: Unassigned
+- Status: Complete
+- Owner: AI agent (opencode)
 - Priority: High
 - Depends on: T-0016, T-0017
 - Phase: Phase 4
@@ -21,4 +21,7 @@ C to assume logical A and physical A to return as standby.
 
 ## Evidence
 
-Record repeated crash/failover results in [Phase 4 evidence](../evidence/phase-4.md).
+The supervisor verifies the quiescent logical-A ring, performs one
+epoch-fenced transfer to physical C, and starts replacement physical A as
+standby. Unsupported or failed recovery returns an explicit degraded/failsafe
+result. Validation is recorded in [Phase 4 evidence](../evidence/phase-4.md).

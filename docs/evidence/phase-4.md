@@ -47,5 +47,16 @@ This record is the evidence target for
 - Catch2: 90/90 passed in `build/t0015-catch2`.
 - Lifecycle integration test launched the topology and verified clean cleanup.
 
+## T-0018 Result
+
+- Implementation: supervisor crash recovery verifies the quiescent logical-A
+  ring, performs one epoch-fenced transfer to physical C, and starts
+  replacement physical A as standby. Recovery failure returns an explicit
+  degraded/failsafe result.
+- Integration test: forked supervisor topology, SIGUSR1 crash of physical A,
+  successful supervisor completion, and final ownership of logical A by C.
+- GoogleTest: 91/91 passed in `build/t0015-gtest`.
+- Catch2: 91/91 passed in `build/t0015-catch2`.
+
 Each closed task must link implementation and durable command/result evidence
 here or in `NOTES.md`.

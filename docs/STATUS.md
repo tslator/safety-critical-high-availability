@@ -24,11 +24,12 @@
 | T-0015: ownership and epoch model | Complete | Versioned v4 ownership metadata, generation fencing, CAS promotion, stale-token test; GoogleTest/Catch2 84/84 |
 | T-0016: worker promotion control | Complete | Physical/logical identity separation, generation-aware acknowledgement, stale publication fence, standby promotion controls; GoogleTest/Catch2 85/85 |
 | T-0017: supervisor lifecycle and monitor pipe | Complete | Shared-memory preflight, monitor JSON pipe validation, worker/monitor launch, bounded shutdown, and deterministic reaping; GoogleTest/Catch2 90/90 |
+| T-0018: crash failover and replacement | Complete | Epoch-fenced logical-A promotion to physical C, replacement physical A standby launch, idempotent crash handling, and explicit degraded/failsafe result; GoogleTest/Catch2 91/91 |
 | Phase 4 supervisor and crash failover | In progress | Accepted review D-2026-09-20-002, decision DEC-0011; T-0015 complete, T-0016–T-0022 planned |
 
 ## Next Work
 
-1. T-0018: crash failover and replacement.
+1. T-0019: sequence continuity witness.
 2. Optional tooling follow-ups from DEC-0008: `clang-static-analysis`
    (advisory) and `clang-sanitizers` presets.
 

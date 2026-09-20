@@ -99,6 +99,7 @@ int run_standby(shared_memory::SharedRegion& region, const WorkerConfig& cfg,
             WorkerConfig promoted = cfg;
             promoted.logical_ring = static_cast<std::uint32_t>(logical_ring);
             if (acknowledge_ownership(region, promoted, token)) {
+                promoted.process_generation = token.process_generation;
                 return run_hot(region, promoted, signal_state);
             }
         }

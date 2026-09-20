@@ -105,6 +105,9 @@ bool parse_report(std::string_view line, MonitorLine& out) {
 
 struct Child {
     pid_t pid{-1};
+    std::uint32_t physical_worker{shared_memory::kUnassignedPhysicalOwner};
+    bool worker{false};
+    bool handled{false};
 };
 
 void terminate_and_reap(std::vector<Child>& children) {
@@ -140,6 +143,83 @@ pid_t launch_worker(const workers::WorkerConfig& config, const char* region,
     return pid;
 }
 
+Child* find_worker(std::vector<Child>& children, std::uint32_t physical_worker) {
+    for (Child& child : children) {
+        if (child.worker && child.physical_worker == physical_worker && !child.handled) {
+            return &child;
+        }
+    }
+    return nullptr;
+}
+
+bool recover_worker_crash(shared_memory::SharedRegion& region,
+                          std::vector<Child>& children,
+                          std::uint32_t physical_worker,
+                          const char* region_name, const char* pid_dir,
+                          std::uint32_t& next_generation) {
+    if (physical_worker != 0u) {
+        return false;
+    }
+    Child* crashed = find_worker(children, physical_worker);
+    if (crashed == nullptr) {
+        return true;
+    }
+    crashed->handled = true;
+
+    shared_memory::OwnershipToken expected;
+    if (!shared_memory::read_ownership(region, 0u, expected) ||
+        expected.physical_owner != physical_worker ||
+        !shared_memory::verify_worker_ring(region, 0u)) {
+        return false;
+    }
+
+    const std::uint32_t replacement_generation = ++next_generation;
+    shared_memory::OwnershipToken replacement;
+    if (!shared_memory::transfer_ownership(region, 0u, expected, 2u, 1u,
+                                            replacement)) {
+        return false;
+    }
+
+    workers::WorkerConfig replacement_a{};
+    replacement_a.worker_idx = 0u;
+    replacement_a.logical_ring = shared_memory::kUnassignedPhysicalOwner;
+    replacement_a.process_generation = replacement_generation;
+    replacement_a.role = workers::WorkerRole::kStandby;
+    replacement_a.ticks = 1000u;
+    const pid_t replacement_pid = launch_worker(replacement_a, region_name, pid_dir);
+    if (replacement_pid < 0) {
+        return false;
+    }
+    children.push_back({replacement_pid, 0u, true, false});
+    return true;
+}
+
+bool reap_crashed_workers(shared_memory::SharedRegion& region,
+                          std::vector<Child>& children,
+                          const char* region_name, const char* pid_dir,
+                          std::uint32_t& next_generation) {
+    for (std::size_t index = 0; index < children.size(); ++index) {
+        Child& child = children[index];
+        if (!child.worker || child.pid <= 0 || child.handled) {
+            continue;
+        }
+        int status = 0;
+        if (::waitpid(child.pid, &status, WNOHANG) != child.pid) {
+            continue;
+        }
+        child.pid = -1;
+        if (WIFSIGNALED(status) || (WIFEXITED(status) && WEXITSTATUS(status) != 0)) {
+            if (!recover_worker_crash(region, children, child.physical_worker,
+                                       region_name, pid_dir, next_generation)) {
+                return false;
+            }
+        } else {
+            child.handled = true;
+        }
+    }
+    return true;
+}
+
 }  // namespace
 
 bool parse_monitor_line(std::string_view line, MonitorLine& out) {
@@ -166,6 +246,8 @@ int run_supervisor(const SupervisorConfig& config) {
         return 1;
     }
     std::vector<Child> children;
+    SupervisorState state = SupervisorState::kLaunching;
+    std::uint32_t next_generation = 1u;
     const pid_t monitor = ::fork();
     if (monitor == 0) {
         ::close(pipe_fds[0]);
@@ -182,7 +264,7 @@ int run_supervisor(const SupervisorConfig& config) {
         return 1;
     }
     ::close(pipe_fds[1]);
-    children.push_back({monitor});
+    children.push_back({monitor, shared_memory::kUnassignedPhysicalOwner, false, false});
 
     workers::WorkerConfig hot_a{};
     hot_a.worker_idx = 0;
@@ -201,7 +283,7 @@ int run_supervisor(const SupervisorConfig& config) {
             g_stop = 1;
             break;
         }
-        children.push_back({pid});
+        children.push_back({pid, worker.worker_idx, true, false});
     }
 
     struct sigaction action{};
@@ -220,7 +302,15 @@ int run_supervisor(const SupervisorConfig& config) {
     std::string last_line;
     bool input_error = false;
     char buffer[512];
-    while (!g_stop && std::chrono::steady_clock::now() < deadline) {
+    state = SupervisorState::kRunning;
+    bool recovery_failed = false;
+    while (!g_stop && !recovery_failed && std::chrono::steady_clock::now() < deadline) {
+        if (!reap_crashed_workers(*region.get(), children, config.region_name,
+                                  config.pid_dir.c_str(), next_generation)) {
+            state = SupervisorState::kFailsafe;
+            recovery_failed = true;
+            break;
+        }
         struct pollfd descriptor{pipe_fds[0], POLLIN | POLLHUP, 0};
         const int ready = ::poll(&descriptor, 1, 10);
         if (ready > 0 && (descriptor.revents & (POLLIN | POLLHUP)) != 0) {
@@ -239,6 +329,10 @@ int run_supervisor(const SupervisorConfig& config) {
                     continue;
                 }
                 last_line = line;
+                if (parsed.kind == MonitorLineKind::kAlert &&
+                    parsed.event == "worker_crashed") {
+                    state = SupervisorState::kFailoverDetected;
+                }
                 std::fwrite(line.data(), 1, line.size(), stdout);
                 std::fputc('\n', stdout);
                 std::fflush(stdout);
@@ -253,6 +347,9 @@ int run_supervisor(const SupervisorConfig& config) {
     sigaction(SIGTERM, &old_term, nullptr);
     sigaction(SIGINT, &old_int, nullptr);
     region.detach();
+    if (state == SupervisorState::kDegraded || state == SupervisorState::kFailsafe) {
+        return 4;
+    }
     return input_error ? 3 : 0;
 }
 

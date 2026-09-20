@@ -29,6 +29,16 @@ struct SupervisorConfig {
     std::uint64_t runtime_ms{0};  // zero means run until SIGTERM or child exit
 };
 
+enum class SupervisorState : std::uint8_t {
+    kIdle,
+    kLaunching,
+    kRunning,
+    kFailoverDetected,
+    kRecovering,
+    kDegraded,
+    kFailsafe,
+};
+
 // Creates/verifies shared memory, launches monitor plus A/B hot and C standby,
 // forwards validated monitor alerts to stdout, then terminates and reaps every
 // child. Returns zero after an orderly shutdown, nonzero on setup failure.
