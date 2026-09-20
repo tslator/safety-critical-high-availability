@@ -68,7 +68,7 @@ function(safety_crit_configure_test_adapter output_dir)
     configure_file(
         "${SAFETY_CRIT_CMAKE_DIR}/../tests/test_framework.hpp.in"
         "${output_dir}/test_framework.hpp"
-        COPY_ONLY)
+        COPYONLY)
 endfunction()
 
 # Prepare a unit-test executable for the selected framework: generates the
