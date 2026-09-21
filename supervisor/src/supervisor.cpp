@@ -199,7 +199,8 @@ bool recover_worker_crash(shared_memory::SharedRegion& region,
 bool reap_crashed_workers(shared_memory::SharedRegion& region,
                           std::vector<Child>& children,
                           const char* region_name, const char* pid_dir,
-                          std::uint32_t& next_generation) {
+                          std::uint32_t& next_generation,
+                          std::chrono::steady_clock::time_point* crash_observed) {
     for (std::size_t index = 0; index < children.size(); ++index) {
         Child& child = children[index];
         if (!child.worker || child.pid <= 0 || child.handled) {
@@ -211,6 +212,9 @@ bool reap_crashed_workers(shared_memory::SharedRegion& region,
         }
         child.pid = -1;
         if (WIFSIGNALED(status) || (WIFEXITED(status) && WEXITSTATUS(status) != 0)) {
+            if (crash_observed != nullptr && crash_observed->time_since_epoch().count() == 0) {
+                *crash_observed = std::chrono::steady_clock::now();
+            }
             if (!recover_worker_crash(region, children, child.physical_worker,
                                        region_name, pid_dir, next_generation)) {
                 return false;
@@ -340,12 +344,20 @@ int run_supervisor(const SupervisorConfig& config) {
     OutputWitness output_witness_a;
     OutputWitness output_witness_b;
     std::uint64_t records_before_failover = 0;
+    // T-0022 (G4.3): the "injected worker fault" start-of-clock is approximated
+    // by the supervisor's reap observation of the crash, which is the earliest
+    // supervisor-observable signal. Elapsed ms to first post-failover record
+    // is emitted once on stdout for phase evidence.
+    std::chrono::steady_clock::time_point failover_detected{};
+    bool failover_timing_emitted = false;
     char buffer[512];
     state = SupervisorState::kRunning;
     bool recovery_failed = false;
     while (!g_stop && !recovery_failed && std::chrono::steady_clock::now() < deadline) {
+        const bool failover_previously_detected = failover_detected.time_since_epoch().count() != 0;
         if (!reap_crashed_workers(*region.get(), children, config.region_name,
-                                  config.pid_dir.c_str(), next_generation)) {
+                                  config.pid_dir.c_str(), next_generation,
+                                  &failover_detected)) {
             state = SupervisorState::kFailsafe;
             recovery_failed = true;
             break;
@@ -356,10 +368,33 @@ int run_supervisor(const SupervisorConfig& config) {
             recovery_failed = true;
             break;
         }
+        // Snapshot the drain position on the same iteration that reap moved
+        // ownership so first-post-failover only counts records committed
+        // AFTER the crash (A's residual drain here is excluded).
+        if (!failover_previously_detected &&
+            failover_detected.time_since_epoch().count() != 0 &&
+            records_before_failover == 0u) {
+            records_before_failover = output_witness_a.records;
+        }
         shared_memory::OwnershipToken logical_a;
         if (shared_memory::read_ownership(*region.get(), 0u, logical_a) &&
             logical_a.physical_owner == 2u && logical_a.epoch > 2u &&
             output_witness_a.records > records_before_failover) {
+            if (!output_witness_a.first_post_failover) {
+                // Only emit the timing when this process actually observed
+                // the crash via reap; a stale region carried over from a
+                // previous run has ownership already moved and would
+                // otherwise produce a nonsensical delta against a zero clock.
+                if (failover_detected.time_since_epoch().count() != 0) {
+                    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                        std::chrono::steady_clock::now() - failover_detected)
+                                        .count();
+                    std::printf("supervisor: first post-failover record observed in %lld ms\n",
+                                static_cast<long long>(ms));
+                    std::fflush(stdout);
+                }
+                failover_timing_emitted = true;
+            }
             output_witness_a.first_post_failover = true;
         }
         struct pollfd descriptor{pipe_fds[0], POLLIN | POLLHUP, 0};
@@ -383,7 +418,9 @@ int run_supervisor(const SupervisorConfig& config) {
                 if (parsed.kind == MonitorLineKind::kAlert &&
                     parsed.event == "worker_crashed") {
                     state = SupervisorState::kFailoverDetected;
-                    records_before_failover = output_witness_a.records;
+                    // Records snapshot lives with reap_crashed_workers (the
+                    // actual failover trigger), not here, so drain position
+                    // and ownership transfer stay consistent.
                 }
                 std::fwrite(line.data(), 1, line.size(), stdout);
                 std::fputc('\n', stdout);
@@ -398,6 +435,22 @@ int run_supervisor(const SupervisorConfig& config) {
     terminate_and_reap(children);
     sigaction(SIGTERM, &old_term, nullptr);
     sigaction(SIGINT, &old_int, nullptr);
+    // T-0022 (Phase 4 exit evidence): the shutdown summary captures the drain
+    // witness state (records, corruptions, first-post-failover) and the exit
+    // reason so integration runs can verify continuity and clean shutdown
+    // without attaching a second consumer to the ring.
+    std::printf(
+        "supervisor: shutdown state=%d a_records=%llu a_corruptions=%llu a_first_post_failover=%d "
+        "b_records=%llu b_corruptions=%llu b_first_post_failover=%d failover_timing_emitted=%d\n",
+        static_cast<int>(state),
+        static_cast<unsigned long long>(output_witness_a.records),
+        static_cast<unsigned long long>(output_witness_a.corruptions),
+        output_witness_a.first_post_failover ? 1 : 0,
+        static_cast<unsigned long long>(output_witness_b.records),
+        static_cast<unsigned long long>(output_witness_b.corruptions),
+        output_witness_b.first_post_failover ? 1 : 0,
+        failover_timing_emitted ? 1 : 0);
+    std::fflush(stdout);
     region.detach();
     if (state == SupervisorState::kDegraded || state == SupervisorState::kFailsafe) {
         return 4;

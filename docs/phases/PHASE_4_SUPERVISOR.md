@@ -26,15 +26,23 @@ redundancy remain out of scope.
 ## Task Sequence
 
 1. [T-0015](../tasks/T-0015-phase4-ownership-epoch.md): ownership and epochs.
+   Complete 2026-09-20 (G4.1 green: [evidence](../evidence/phase-4.md)).
 2. [T-0016](../tasks/T-0016-worker-promotion-control.md): worker control.
+   Complete 2026-09-20 (G4.1 green: [evidence](../evidence/phase-4.md)).
 3. [T-0017](../tasks/T-0017-supervisor-lifecycle-monitor-pipe.md): supervisor
-   lifecycle and monitor ingestion.
+   lifecycle and monitor ingestion. Complete 2026-09-20 (G4.2 green:
+   [evidence](../evidence/phase-4.md)).
 4. [T-0018](../tasks/T-0018-crash-failover-replacement.md): crash recovery.
+   Complete 2026-09-20 (G4.3 green: [evidence](../evidence/phase-4.md)).
 5. [T-0019](../tasks/T-0019-sequence-continuity-witness.md): continuity and
-   output witness.
+   output witness. Complete 2026-09-20 (G4.4 green: [evidence](../evidence/phase-4.md)).
 6. [T-0020](../tasks/T-0020-scheduling-priority.md): scheduling policy.
+   Complete 2026-09-20 (G4.5 green: [evidence](../evidence/phase-4.md)).
 7. [T-0021](../tasks/T-0021-compose-runtime-integration.md): Compose runtime.
+   Complete 2026-09-21 (G4.6 green: [evidence](../evidence/phase-4.md)).
 8. [T-0022](../tasks/T-0022-phase4-integration-exit.md): evidence and exit.
+   Complete 2026-09-21 (Phase 4 exit gate satisfied:
+   [evidence](../evidence/phase-4.md)).
 
 ## State Model
 

@@ -30,7 +30,7 @@ sequential `T-####`; phase-scoped labels such as `T1.3` are aliases. See
 | [T-0019](T-0019-sequence-continuity-witness.md) | Phase 4 | Sequence continuity and output witness | AI agent (opencode) | Complete | High | T-0015, T-0016, T-0018 | [DEC-0011](../decisions/0011-phase4-supervisor-failover.md) |
 | [T-0020](T-0020-scheduling-priority.md) | Phase 4 | Scheduling priority policy | AI agent (opencode) | Complete | Medium | T-0017 | [DEC-0011](../decisions/0011-phase4-supervisor-failover.md) |
 | [T-0021](T-0021-compose-runtime-integration.md) | Phase 4 | Compose runtime integration | AI agent (opencode) | Complete | High | T-0017, T-0018 | [DEC-0011](../decisions/0011-phase4-supervisor-failover.md) |
-| [T-0022](T-0022-phase4-integration-exit.md) | Phase 4 | Integration, evidence, and phase exit | Unassigned | Planned | High | T-0018, T-0019, T-0020, T-0021 | [DEC-0011](../decisions/0011-phase4-supervisor-failover.md) |
+| [T-0022](T-0022-phase4-integration-exit.md) | Phase 4 | Integration, evidence, and phase exit | AI agent (opencode) | Complete | High | T-0018, T-0019, T-0020, T-0021 | [DEC-0011](../decisions/0011-phase4-supervisor-failover.md) |
 | T1.1 | Phase 1 | Shared region layout and atomic flags _(roll-up)_ | — | Complete | — | — | [Phase 1 plan](../phases/PHASE_1_SHARED_MEMORY.md) |
 | T1.2 | Phase 1 | Lock-free ring buffer _(roll-up)_ | — | Complete | — | — | [Phase 1 plan](../phases/PHASE_1_SHARED_MEMORY.md), [evidence](../evidence/phase-1.md) |
 | Phase 0 | Phase 0 | Container and tooling (0.1–0.6) _(roll-up)_ | — | Complete | — | — | [Phase 0 plan](../phases/PHASE_0_CONTAINER_AND_TOOLING.md) |

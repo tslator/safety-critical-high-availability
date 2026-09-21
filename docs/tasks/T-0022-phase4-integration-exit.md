@@ -1,7 +1,7 @@
 # T-0022: Phase 4 Integration, Evidence, and Exit
 
-- Status: Planned
-- Owner: Unassigned
+- Status: Complete
+- Owner: AI agent (opencode)
 - Priority: High
 - Depends on: T-0018, T-0019, T-0020, T-0021
 - Phase: Phase 4
@@ -23,4 +23,22 @@ phase exit documentation.
 
 ## Evidence
 
-Close only with the hosted CI run and [Phase 4 evidence](../evidence/phase-4.md) linked.
+Full Phase 4 exit matrix recorded in [Phase 4 evidence](../evidence/phase-4.md)
+under "Phase 4 Exit". Summary of what closed the phase:
+
+- Supervisor stdout witness events (`first post-failover record observed in Nms`
+  and `shutdown state=... a_records=... a_corruptions=... a_first_post_failover=...`)
+  enable fault-to-first-output timing and continuity observation without a
+  second consumer on the ring.
+- `scripts/phase4-failover-timing.sh` runs N supervisor iterations with
+  SIGKILL-injected crashes and reports min/median/max/avg and over-threshold
+  count against the DEC-0011 #5 `<100 ms` target.
+- Local matrix green: GoogleTest 95/95, Catch2 95/95, ASan+UBSan (both
+  frameworks, 87/87 each — 8 fork integration cases skip under sanitizers),
+  TSan x2 (87/87 each, `setarch --addr-no-randomize`), clang-verify (pinned
+  image, 95/95), Docker build, Compose smoke + in-container failover (5
+  consecutive passes).
+- Repeated crash recovery timing (10 iterations on the reference host):
+  min 84 ms, median 84 ms, max 91 ms, avg 85 ms — every iteration within the
+  `<100 ms` target with zero corruptions across the drain witness.
+- Hosted CI run recorded in the evidence file.

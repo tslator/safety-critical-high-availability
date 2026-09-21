@@ -9,11 +9,11 @@ test, sanitizer, and clang-verify matrices. Phase 2 is complete: worker
 processes with deterministic workloads, deadline monitoring, clean shutdown,
 and a forced-crash hook. Phase 3 is complete: the monitor daemon observes
 worker status cells and pidfile liveness and publishes crash/stall/recovery
-detections as structured JSON lines. Phase 4 is in progress: the supervisor
-owns the monitor + hot A/B + standby C topology, transfers logical A to C after
-an A crash, restarts A as standby, and the real Compose stack runs that
-topology end-to-end with an in-container failover smoke; Phase 4 exit (T-0022)
-and fault injection remain planned.
+detections as structured JSON lines. Phase 4 is complete: the supervisor owns
+the monitor + hot A/B + standby C topology, transfers logical A to C after a
+crash and restarts A as standby with sub-100 ms fault-to-first-output timing,
+and the real Compose stack runs that topology end-to-end with an in-container
+failover smoke. Fault injection and stall recovery are Phase 5 scope.
 
 See [project status](docs/STATUS.md) for the current phase table and next
 tasks. The [architecture](docs/ARCHITECTURE.md), [development guide](docs/DEVELOPMENT.md),

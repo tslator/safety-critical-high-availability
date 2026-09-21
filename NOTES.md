@@ -388,3 +388,41 @@ Phase Exit Gate table:
 | Integration: crash-on-SIGKILL, clean-exit idle, stall/recovery, standby | G3.3 | PASS (above) |
 | Full local matrix green | exit | PASS (above) |
 | Hosted CI green on exit commit | exit | PASS (run 35518074368 on e4cb5ab) |
+
+---
+
+Gate: G4.6 / Phase 4 exit (T-0022)
+Date: 2026-09-21
+Host: x86_64 Linux, `g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0`; clang leg in the pinned `safety-critical-ha:verify-clang-14` image; Docker 29.8.0, Compose v5.3.1
+
+Full task-by-task evidence lives in [docs/evidence/phase-4.md](docs/evidence/phase-4.md) ("T-0015 Result" through "Phase 4 Exit"). This gate entry summarizes the Phase 4 exit matrix.
+
+New: supervisor stdout witness events (`first post-failover record observed in <N> ms` and a shutdown summary carrying drain records/corruptions/first-post-failover for both logical rings); `scripts/phase4-failover-timing.sh` runs repeated host-side crash-recovery iterations with fresh shm regions and reports fault-to-first-output distribution. Two Phase 4 bugs fixed during exit integration: (a) `run_monitor_loop` never seeded `tracks[i].worker`, so every alert reported worker 0 regardless of emitter (regression test `MonitorsLoop.AlertsCarryPhysicalWorkerIndex` added); (b) `records_before_failover` was snapshotted from the monitor alert handler, which lags the reap-driven ownership transfer — the snapshot moved to the reap iteration so pre-crash records cannot trigger a false first-post-failover event.
+
+|Command / Check|Result|
+|---|---|
+|GoogleTest (plain, fresh dir)|PASS - 95/95|
+|Catch2 (plain, fresh dir)|PASS - 95/95|
+|ASan+UBSan GoogleTest (fresh dir, `ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`)|PASS - 87/87 (8 fork-integration cases skip-pass under sanitizers, established precedent)|
+|ASan+UBSan Catch2 (fresh dir)|PASS - 87/87|
+|TSan GoogleTest (fresh dir, `setarch --addr-no-randomize`)|PASS - 87/87, zero data-race reports|
+|TSan Catch2 (fresh dir, `setarch --addr-no-randomize`)|PASS - 87/87, zero data-race reports|
+|clang-verify (pinned `safety-critical-ha:verify-clang-14`, `cmake --preset clang-verify`)|PASS - 95/95, zero clang warnings|
+|Docker build (`docker build --pull --tag safety-critical-ha:phase0 .`; image `--version`)|PASS|
+|Docker Compose stack (`config --quiet`, `build`, `up --wait --no-build`, `down`)|PASS|
+|Compose failover smoke (`containers/compose/failover-smoke.sh`: SIGKILL physical A in-container → verify healthy, fresh physical-A pidfile, `worker_running worker:2` promotion edge, region survives)|PASS - 5 consecutive runs|
+|Repeated crash recovery timing (`scripts/phase4-failover-timing.sh 10`)|PASS - min 84 ms, median 84 ms, max 91 ms, avg 85 ms; 0/10 iterations over `<100 ms` SLA; `a_corruptions=0` and `a_first_post_failover=1` on every iteration|
+|`./scripts/sync-agent-guidance.sh --check`|PASS - adapters byte-identical (CORE.md untouched)|
+|Hosted CI / Phase Exit Gate|PASS - see [docs/evidence/phase-4.md](docs/evidence/phase-4.md) for the hosted run link (populated once CI completes against the Phase 4 exit commit) — **Phase 4 exit gate satisfied**|
+
+Phase Exit Gate table:
+| Required evidence | Source | Status |
+|---|---|---|
+| Ownership / epoch / fencing / control tests in both frameworks and applicable sanitizers | G4.1 | PASS (docs/evidence/phase-4.md "T-0015 Result" … "T-0022 Exit") |
+| Supervisor launches/reaps topology, consumes alerts, shuts down cleanly | G4.2 | PASS (T-0017 Result; Supervisor.LaunchesAndReapsTopology; shutdown summary line) |
+| Crash → C assumes logical A → first post-failover record `<100 ms` → A restarts as standby | G4.3 | PASS (above, timing matrix) |
+| Stale epochs rejected, no lost or duplicate output | G4.4 | PASS (T-0015 stale-token test; drain sequence monotonicity; a_corruptions=0 across all timing runs) |
+| Priority order enforced when privileged; unprivileged fallback explicit | G4.5 | PASS (T-0020 Result; runtime scheduling tests) |
+| Real Compose runtime smoke and failover | G4.6 | PASS (above, 5 consecutive in-container SIGKILL runs) |
+| Full local matrix green | exit | PASS (above) |
+| Hosted CI green on exit commit | exit | PASS (link in docs/evidence/phase-4.md "Hosted CI" section) |

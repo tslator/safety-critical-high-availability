@@ -1,8 +1,8 @@
 # Project Status
 
-- Current phase: Phase 3 complete (G3.1–G3.3 + exit gate) — Phase 4 supervisor planning initiated
-- Current gate: G3.3 complete (Phase 3 exit, hosted run 35518074368)
-- Last updated: 2026-09-20
+- Current phase: Phase 4 complete (G4.1–G4.6 + exit gate) — Phase 5 planning to be initiated
+- Current gate: G4.6 complete (Phase 4 exit); hosted CI run recorded in [Phase 4 evidence](evidence/phase-4.md)
+- Last updated: 2026-09-21
 
 ## Phase Status
 
@@ -28,11 +28,14 @@
 | T-0019: sequence continuity and output witness | Complete | Supervisor-side ring drain validates CRC, monotonic transport sequence, epoch fencing, and post-takeover output observation; GoogleTest/Catch2 92/92 |
 | T-0020: scheduling priority policy | Complete | Runtime policy attempts SCHED_FIFO with monitor < supervisor < workers ordering and records explicit unprivileged fallback; GoogleTest/Catch2 94/94 |
 | T-0021: Compose runtime integration | Complete | Supervisor-only Compose topology sharing /dev/shm and /run/safety-critical-ha; healthcheck on region + worker pidfile liveness; in-container SIGKILL failover smoke verifies standby C promotion; GoogleTest/Catch2 95/95 |
-| Phase 4 supervisor and crash failover | In progress | Accepted review D-2026-09-20-002, decision DEC-0011; T-0015–T-0021 complete, T-0022 planned |
+| T-0022: Phase 4 integration, evidence, and exit | Complete | Full Phase 4 matrix green (GoogleTest/Catch2 95/95; ASan+UBSan x2 87/87 each; TSan x2 87/87 each; clang-verify 95/95; Docker build; Compose smoke + in-container failover x5); 10-iteration crash-recovery timing min 84 / median 84 / max 91 / avg 85 ms (target `<100 ms`) with zero corruptions; supervisor witness events expose timing and shutdown summary on stdout |
+| Phase 4 supervisor and crash failover | Complete | Accepted review D-2026-09-20-002, decision DEC-0011; T-0015–T-0022 all complete; Phase 4 exit gate satisfied (see [evidence](evidence/phase-4.md)) |
 
 ## Next Work
 
-1. T-0022: Phase 4 integration, evidence, and phase exit.
+1. Initiate Phase 5 planning (perturbation / fault-injection scenarios and
+   stall recovery — see [DEC-0011](decisions/0011-phase4-supervisor-failover.md)
+   scope boundary and Phase 4 residual risks).
 2. Optional tooling follow-ups from DEC-0008: `clang-static-analysis`
    (advisory) and `clang-sanitizers` presets.
 
