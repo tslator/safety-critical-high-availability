@@ -10,6 +10,7 @@
 #include "safety_crit/shared_memory/atomic_flags.hpp"
 #include "safety_crit/shared_memory/shm_attach.hpp"
 #include "safety_crit/shared_memory/shared_region.hpp"
+#include "safety_crit/runtime/scheduling.hpp"
 #include "safety_crit/workers/signals.hpp"
 #include "safety_crit/workers/work_loop.hpp"
 #include "safety_crit/workers/workload.hpp"
@@ -123,6 +124,12 @@ bool acknowledge_ownership(const shared_memory::SharedRegion& region,
 }
 
 int run_worker(const WorkerConfig& cfg, const char* region_name, const char* pid_dir) {
+    const runtime::SchedulingResult scheduling =
+        runtime::apply_scheduling(runtime::ProcessRole::kWorker);
+    if (scheduling.fallback) {
+        std::fprintf(stderr, "worker: scheduling fallback (errno %d)\n",
+                     scheduling.error_number);
+    }
     if (!validate_config(cfg)) {
         std::fprintf(stderr, "worker: invalid configuration\n");
         return 2;

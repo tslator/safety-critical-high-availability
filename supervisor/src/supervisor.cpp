@@ -23,6 +23,7 @@
 #include "safety_crit/monitors/monitor_config.hpp"
 #include "safety_crit/monitors/monitor_entry.hpp"
 #include "safety_crit/shared_memory/shm_attach.hpp"
+#include "safety_crit/runtime/scheduling.hpp"
 #include "safety_crit/workers/worker_config.hpp"
 #include "safety_crit/workers/worker_entry.hpp"
 #include "safety_crit/workers/workload.hpp"
@@ -256,6 +257,12 @@ bool drain_output_witness(shared_memory::SharedRegion& region, std::size_t logic
 }
 
 int run_supervisor(const SupervisorConfig& config) {
+    const runtime::SchedulingResult scheduling =
+        runtime::apply_scheduling(runtime::ProcessRole::kSupervisor);
+    if (scheduling.fallback) {
+        std::fprintf(stderr, "supervisor: scheduling fallback (errno %d)\n",
+                     scheduling.error_number);
+    }
     if (config.region_name == nullptr || config.pid_dir.empty()) {
         return 2;
     }

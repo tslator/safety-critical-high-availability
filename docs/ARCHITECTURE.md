@@ -6,7 +6,10 @@ the Phase 1 `safety_crit::shared_memory` library.
 ```text
 app/                    versioned command-line application
 shared-memory/          shared region, flags, and lock-free ring buffer
+runtime/                process scheduling policy and priority fallback
 workers/                worker runtime (config, workload, pipeline, loop)
+monitors/               health monitor and alert stream
+supervisor/             lifecycle, failover, and output witness
 tests/                  Phase 0 smoke test
 Docker / Compose        reproducible runtime baseline
 ```
@@ -20,10 +23,10 @@ use `verify_identity()` for metadata, `verify_worker_ring()` for a quiescent
 worker being reattached, and whole-region `verify()` only when all rings are
 quiescent.
 
-The long-term monitor, supervisor, and perturbation architecture is
-specified in [the project plan](../SAFETY_CRITICAL_HA_PLAN.md); the Phase 2
-worker runtime (`workers/`, per [DEC-0009](decisions/0009-phase2-worker-runtime.md))
+The monitor and supervisor consume the management plane and own process
+lifecycle according to [DEC-0011](decisions/0011-phase4-supervisor-failover.md).
+The Phase 2 worker runtime (`workers/`, per [DEC-0009](decisions/0009-phase2-worker-runtime.md))
 attaches to the region, produces deterministic processed output onto its own
 ring, maintains `worker_status` (including `OVERRUN`), and stops on SIGTERM.
-The supervisor and fault-injection components remain planned; the ownership
-and epoch foundation is implemented by T-0015.
+The `runtime/` policy attempts `SCHED_FIFO` outside the ring hot path and
+records an explicit fallback when process elevation is unavailable.

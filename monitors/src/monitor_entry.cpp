@@ -8,6 +8,7 @@
 #include "safety_crit/monitors/json_lines.hpp"
 #include "safety_crit/monitors/monitor_loop.hpp"
 #include "safety_crit/monitors/pidfile_liveness.hpp"
+#include "safety_crit/runtime/scheduling.hpp"
 #include "safety_crit/shared_memory/shm_attach.hpp"
 #include "safety_crit/shared_memory/shared_region.hpp"
 #include "safety_crit/workers/signals.hpp"
@@ -16,6 +17,12 @@ namespace safety_crit::monitors {
 
 int run_monitor(const MonitorConfig& cfg, const char* region_name, const char* pid_dir,
                 std::uint64_t max_polls) {
+    const runtime::SchedulingResult scheduling =
+        runtime::apply_scheduling(runtime::ProcessRole::kMonitor);
+    if (scheduling.fallback) {
+        std::fprintf(stderr, "monitor: scheduling fallback (errno %d)\n",
+                     scheduling.error_number);
+    }
     if (!validate_config(cfg)) {
         std::fprintf(stderr, "monitor: invalid configuration\n");
         return 2;

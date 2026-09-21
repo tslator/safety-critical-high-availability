@@ -13,6 +13,7 @@ target_include_directories(safety_crit_monitors
 target_compile_features(safety_crit_monitors PUBLIC cxx_std_20)
 target_link_libraries(safety_crit_monitors
     PUBLIC safety_crit::shared_memory
+           safety_crit::runtime
     PRIVATE safety_crit::workers  # reuses the T2.2 signal wiring (DEC-0009 #3)
 )
 

@@ -25,6 +25,7 @@ if(SAFETY_CRIT_BUILD_TESTING)
 endif()
 
 add_subdirectory(shared-memory)
+add_subdirectory(runtime)
 add_subdirectory(workers)
 add_subdirectory(monitors)
 add_subdirectory(supervisor)

@@ -1,0 +1,5 @@
+add_executable(runtime_scheduling_test scheduling_test.cpp)
+target_link_libraries(runtime_scheduling_test PRIVATE safety_crit::runtime)
+safety_crit_apply_warnings(runtime_scheduling_test)
+safety_crit_apply_sanitizers(runtime_scheduling_test)
+safety_crit_register_tests(runtime_scheduling_test)

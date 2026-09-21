@@ -69,5 +69,18 @@ This record is the evidence target for
 - GoogleTest: 92/92 passed in `build/t0015-gtest`.
 - Catch2: 92/92 passed in `build/t0015-catch2`.
 
+## T-0020 Result
+
+- Implementation: `safety_crit::runtime` assigns priorities 10, 20, and 30 to
+  monitor, supervisor, and workers, respectively. Each process attempts
+  `SCHED_FIFO` once at startup; failure is non-fatal and recorded as an explicit
+  fallback on stderr. No scheduling calls are made from ring operations.
+- Unit tests: numeric priority ordering and applied-versus-fallback result
+  semantics.
+- GoogleTest: 94/94 passed in `build/t0020-gtest`.
+- Catch2: 94/94 passed in `build/t0020-catch2`.
+- This environment exercised the unprivileged fallback path. A privileged
+  `SCHED_FIFO` run remains host/container capability-dependent.
+
 Each closed task must link implementation and durable command/result evidence
 here or in `NOTES.md`.
