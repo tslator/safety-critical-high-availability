@@ -30,3 +30,13 @@ attaches to the region, produces deterministic processed output onto its own
 ring, maintains `worker_status` (including `OVERRUN`), and stops on SIGTERM.
 The `runtime/` policy attempts `SCHED_FIFO` outside the ring hot path and
 records an explicit fallback when process elevation is unavailable.
+
+Compose (T-0021) runs a single `supervisor` service per DEC-0011 #8: the
+service's main process is `safety-critical-ha supervisor`, which forks the
+monitor and hot A/B + standby C workers as its children. All processes share
+one container's `/dev/shm` and the runtime directory at
+`/run/safety-critical-ha`. A healthcheck gates readiness on the region file
+plus three live worker pidfiles; supervisor loss exits the container and
+`restart: unless-stopped` re-establishes the whole topology. Supervisor
+shutdown forwards SIGTERM to every child and reaps them under a bounded
+deadline before returning.

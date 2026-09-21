@@ -17,7 +17,7 @@ docker compose config --quiet
 echo "==> building stack"
 docker compose build
 
-echo "==> starting default services"
+echo "==> starting supervisor (owns monitor + hot A/B + standby C)"
 docker compose up --wait --no-build
 
 echo "==> service status"
@@ -25,3 +25,6 @@ docker compose ps
 
 echo "==> runtime smoke check"
 docker compose exec supervisor safety-critical-ha --version
+
+echo "==> failover smoke (SIGKILL hot A, verify promotion + replacement)"
+./containers/compose/failover-smoke.sh

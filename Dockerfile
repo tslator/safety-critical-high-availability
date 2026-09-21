@@ -71,5 +71,10 @@ RUN apt-get update \
 
 COPY --from=builder /usr/local/bin/safety-critical-ha /usr/local/bin/safety-critical-ha
 
+# Supervisor runtime directory (T-0021): supervisor passes this to workers
+# for pidfile publishing (DEC-0011 #4). Pre-create so the container starts
+# without depending on a volume mount.
+RUN mkdir -p /run/safety-critical-ha
+
 ENTRYPOINT ["/usr/local/bin/safety-critical-ha"]
 CMD ["--version"]

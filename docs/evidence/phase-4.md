@@ -82,5 +82,54 @@ This record is the evidence target for
 - This environment exercised the unprivileged fallback path. A privileged
   `SCHED_FIFO` run remains host/container capability-dependent.
 
+## T-0021 Result
+
+- Implementation: Compose launches one `supervisor` service that runs
+  `safety-critical-ha supervisor` with unbounded `--runtime-ms` and unbounded
+  hot-worker ticks; the supervisor forks the monitor and hot A/B + standby C
+  workers in-container (DEC-0011 #4). The container shares `/dev/shm`
+  (`shm_size: 64m`) and pre-creates `/run/safety-critical-ha` (Dockerfile
+  runtime stage). The healthcheck checks region file existence plus all three
+  worker pidfiles pointing to live pids; the container's restart policy
+  (`unless-stopped`) covers supervisor loss per DEC-0011 #8.
+- Regression fix surfaced during integration: `run_monitor_loop` never seeded
+  `track.worker`, so every alert reported `worker:0` regardless of the emitting
+  physical worker. `monitors/include/.../monitor_loop.hpp` now seeds each
+  track's index; regression test
+  `MonitorsLoop.AlertsCarryPhysicalWorkerIndex` covers the three-worker initial
+  edge.
+- Supervisor default `worker_ticks` raised from `1000` to
+  `std::numeric_limits<std::uint64_t>::max()` so hot workers survive for the
+  lifetime of the Compose service; tests set explicit budgets.
+- Failover smoke (`containers/compose/failover-smoke.sh`): reads the physical-A
+  pidfile, `kill -9` the hot worker, waits for the container to return to
+  healthy, asserts the physical-A pidfile points to a fresh live pid, and
+  asserts the supervisor's forwarded monitor stream contains
+  `"event":"worker_running","worker":2` (the physical C promotion edge). Three
+  consecutive end-to-end runs against the locally built image succeeded.
+- `run_demo.sh` and CI job `docker-compose-smoke` both invoke the failover
+  smoke after the version probe.
+- GoogleTest: 95/95 passed in `build/t0020-gtest`.
+- Catch2: 95/95 passed in `build/t0020-catch2`.
+- Docker: `docker compose config --quiet`, `docker compose build`, `docker
+  compose up --wait --no-build`, and `docker compose down --volumes
+  --remove-orphans` all green (Docker 29.8.0 / Compose v5.3.1, linux/amd64).
+
+### Follow-ups surfaced by T-0021 (Phase 4 tail / Phase 5)
+
+- Monitor's `poll_worker` reads the physical worker's home-ring tail. After a
+  promotion, physical C owns logical ring A and produces to ring A, so the
+  monitor's tail observation for physical C is stale and produces a spurious
+  `worker_stalled` for the promoted worker after the stall threshold elapses.
+  State transitions and supervisor failover are unaffected (recovery is
+  triggered by `waitpid`, not by monitor alerts). A Phase 5 monitor refresh
+  should attribute per-physical-worker ring tails via the ownership cell.
+- Monitor poll interval and supervisor replacement latency are both 10 ms, so
+  the monitor only observes `worker_crashed` when its poll lands in the small
+  window between `kill` and the replacement writing its pidfile. The smoke
+  therefore keys off the promotion edge (`worker_running worker:2`) rather
+  than the crash edge; a Phase 5 monitor tuning task can decide whether to
+  shorten the monitor poll interval or emit an explicit supervisor-side event.
+
 Each closed task must link implementation and durable command/result evidence
 here or in `NOTES.md`.

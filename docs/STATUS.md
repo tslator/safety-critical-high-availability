@@ -27,11 +27,12 @@
 | T-0018: crash failover and replacement | Complete | Epoch-fenced logical-A promotion to physical C, replacement physical A standby launch, idempotent crash handling, and explicit degraded/failsafe result; GoogleTest/Catch2 91/91 |
 | T-0019: sequence continuity and output witness | Complete | Supervisor-side ring drain validates CRC, monotonic transport sequence, epoch fencing, and post-takeover output observation; GoogleTest/Catch2 92/92 |
 | T-0020: scheduling priority policy | Complete | Runtime policy attempts SCHED_FIFO with monitor < supervisor < workers ordering and records explicit unprivileged fallback; GoogleTest/Catch2 94/94 |
-| Phase 4 supervisor and crash failover | In progress | Accepted review D-2026-09-20-002, decision DEC-0011; T-0015 complete, T-0016–T-0022 planned |
+| T-0021: Compose runtime integration | Complete | Supervisor-only Compose topology sharing /dev/shm and /run/safety-critical-ha; healthcheck on region + worker pidfile liveness; in-container SIGKILL failover smoke verifies standby C promotion; GoogleTest/Catch2 95/95 |
+| Phase 4 supervisor and crash failover | In progress | Accepted review D-2026-09-20-002, decision DEC-0011; T-0015–T-0021 complete, T-0022 planned |
 
 ## Next Work
 
-1. T-0021: Compose runtime integration.
+1. T-0022: Phase 4 integration, evidence, and phase exit.
 2. Optional tooling follow-ups from DEC-0008: `clang-static-analysis`
    (advisory) and `clang-sanitizers` presets.
 

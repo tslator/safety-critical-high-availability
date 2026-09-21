@@ -1,3 +1,11 @@
+# Phase 4 supervisor topology (T-0021, DEC-0011 #4/#8):
+#   - The supervisor is the only long-lived Compose service. It forks the
+#     monitor and the hot A/B + standby C workers, so all processes share
+#     one container, one /dev/shm namespace, and one runtime directory.
+#   - Supervisor loss exits the container; `restart: unless-stopped`
+#     (re-)establishes the whole topology on the next start.
+#   - The `perturb` service remains available for Phase 5 fault-injection
+#     scenarios under its opt-in profile.
 services:
   supervisor:
     build:
@@ -6,9 +14,16 @@ services:
     image: safety-critical-ha:phase0
     labels:
       safety-critical.role: supervisor
-    cpus: "0.5"
+    command:
+      - supervisor
+      - --runtime-ms
+      - "0"
+      - --region
+      - /safety_crit_region
+      - --pid-dir
+      - /run/safety-critical-ha
+    cpus: "1.5"
     mem_limit: 512m
-    entrypoint: ["sleep", "infinity"]
     cap_add:
       - SYS_NICE
       - SYS_PTRACE
@@ -16,104 +31,30 @@ services:
     restart: unless-stopped
     networks: [safety-ha]
     healthcheck:
-      test: ["CMD", "safety-critical-ha", "--version"]
-      interval: 30s
-      timeout: 5s
-      retries: 2
-
-
-  monitor:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: safety-critical-ha:phase0
-    labels:
-      safety-critical.role: monitor
-    cpus: "0.25"
-    mem_limit: 256m
-    entrypoint: ["sleep", "infinity"]
-    shm_size: 64m
-    restart: unless-stopped
-    networks: [safety-ha]
-    healthcheck:
-      test: ["CMD", "safety-critical-ha", "--version"]
-      interval: 30s
-      timeout: 5s
-      retries: 2
-
-  worker-a:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: safety-critical-ha:phase0
-    labels:
-      safety-critical.role: worker-a
-    cpus: "0.5"
-    mem_limit: 512m
-    entrypoint: ["sleep", "infinity"]
-    cap_add:
-      - SYS_NICE
-      - SYS_PTRACE
-    shm_size: 64m
-    restart: unless-stopped
-    networks: [safety-ha]
-    healthcheck:
-      test: ["CMD", "safety-critical-ha", "--version"]
-      interval: 30s
-      timeout: 5s
-      retries: 2
-
-  worker-b:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: safety-critical-ha:phase0
-    labels:
-      safety-critical.role: worker-b
-    cpus: "0.5"
-    mem_limit: 512m
-    entrypoint: ["sleep", "infinity"]
-
-    cap_add:
-      - SYS_NICE
-      - SYS_PTRACE
-    shm_size: 64m
-    restart: unless-stopped
-    networks: [safety-ha]
-    healthcheck:
-      test: ["CMD", "safety-critical-ha", "--version"]
-      interval: 30s
-      timeout: 5s
-      retries: 2
-
-  worker-c:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: safety-critical-ha:phase0
-    labels:
-      safety-critical.role: worker-c
-    cpus: "0.5"
-    mem_limit: 512m
-    entrypoint: ["sleep", "infinity"]
-    cap_add:
-      - SYS_NICE
-      - SYS_PTRACE
-    shm_size: 64m
-    restart: unless-stopped
-    networks: [safety-ha]
-    healthcheck:
-      test: ["CMD", "safety-critical-ha", "--version"]
-      interval: 30s
-      timeout: 5s
-      retries: 2
+      # Health is defined by shared-memory + worker pidfile liveness rather
+      # than a version probe: if any hot worker (or the standby) dies and
+      # the supervisor has not replaced it, the healthcheck goes red.
+      test:
+        - CMD-SHELL
+        - >-
+          test -e /dev/shm/safety_crit_region
+          && test -e /run/safety-critical-ha/safety_crit_worker_0.pid
+          && test -e /run/safety-critical-ha/safety_crit_worker_1.pid
+          && test -e /run/safety-critical-ha/safety_crit_worker_2.pid
+          && kill -0 "$(cat /run/safety-critical-ha/safety_crit_worker_0.pid)"
+          && kill -0 "$(cat /run/safety-critical-ha/safety_crit_worker_1.pid)"
+          && kill -0 "$(cat /run/safety-critical-ha/safety_crit_worker_2.pid)"
+      interval: 2s
+      timeout: 2s
+      retries: 3
+      start_period: 10s
 
   perturb:
     build:
       context: .
       dockerfile: Dockerfile
-    profiles: ["perturb"]
     image: safety-critical-ha:phase0
+    profiles: ["perturb"]
     labels:
       safety-critical.role: perturb
     cpus: "0.5"
@@ -125,7 +66,6 @@ services:
     restart: "no"
     shm_size: 64m
     networks: [safety-ha]
-
 
 networks:
   safety-ha:

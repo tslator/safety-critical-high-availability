@@ -217,6 +217,35 @@ SAFETY_CRIT_TEST_CASE(MonitorsLoop, BoundedStopLatency) {
     SAFETY_CRIT_ASSERT(poll_number == 3u);
 }
 
+SAFETY_CRIT_TEST_CASE(MonitorsLoop, AlertsCarryPhysicalWorkerIndex) {
+    FakeClock::reset();
+    shm::SharedRegion region;
+    SAFETY_CRIT_ASSERT(shm::initialize(region));
+    // Physical 0 idle, 1 running, 2 running: each emits one edge in worker
+    // order on the first poll and the reported index must match the poll
+    // slot (regression: T-0021 caught alerts all attributing to worker 0
+    // because the per-worker tracks were never seeded with their index).
+    set_status(region, 0, to_bits(WorkerStatusFlag::kIdle));
+    set_status(region, 1, to_bits(WorkerStatusFlag::kRunning));
+    set_status(region, 2, to_bits(WorkerStatusFlag::kRunning));
+
+    const MonitorConfig cfg = make_cfg(std::chrono::milliseconds(10),
+                                       std::chrono::milliseconds(100));
+    std::vector<Alert> emitted;
+    (void)run_monitor_loop<FakeClock>(
+        cfg, region, std::stop_token(), kNoSignal, 1,
+        [&](const Alert& a) { emitted.push_back(a); },
+        [](std::size_t) { return true; }, []() {});
+
+    SAFETY_CRIT_ASSERT(emitted.size() == 3u);
+    SAFETY_CRIT_ASSERT(emitted[0].worker == 0u);
+    SAFETY_CRIT_ASSERT(emitted[0].kind == AlertKind::kWorkerIdle);
+    SAFETY_CRIT_ASSERT(emitted[1].worker == 1u);
+    SAFETY_CRIT_ASSERT(emitted[1].kind == AlertKind::kWorkerRunning);
+    SAFETY_CRIT_ASSERT(emitted[2].worker == 2u);
+    SAFETY_CRIT_ASSERT(emitted[2].kind == AlertKind::kWorkerRunning);
+}
+
 SAFETY_CRIT_TEST_CASE(MonitorsJson, AlertLineExactFormat) {
     Alert alert;
     alert.worker = 2;

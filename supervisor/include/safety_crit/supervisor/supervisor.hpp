@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <string_view>
 
 #include "safety_crit/shared_memory/shared_region.hpp"
@@ -41,7 +42,9 @@ bool drain_output_witness(shared_memory::SharedRegion& region, std::size_t logic
 struct SupervisorConfig {
     const char* region_name{"/safety_crit_region"};
     std::filesystem::path pid_dir{"/run/safety-critical-ha"};
-    std::uint64_t worker_ticks{1000};
+    // Hot workers run until SIGTERM/SIGINT by default (T-0021: supervisor is
+    // a long-lived Compose service). Tests set an explicit bounded budget.
+    std::uint64_t worker_ticks{std::numeric_limits<std::uint64_t>::max()};
     std::uint64_t runtime_ms{0};  // zero means run until SIGTERM or child exit
 };
 

@@ -9,8 +9,11 @@ test, sanitizer, and clang-verify matrices. Phase 2 is complete: worker
 processes with deterministic workloads, deadline monitoring, clean shutdown,
 and a forced-crash hook. Phase 3 is complete: the monitor daemon observes
 worker status cells and pidfile liveness and publishes crash/stall/recovery
-detections as structured JSON lines. Supervisors, failover, and fault
-injection remain planned for later phases.
+detections as structured JSON lines. Phase 4 is in progress: the supervisor
+owns the monitor + hot A/B + standby C topology, transfers logical A to C after
+an A crash, restarts A as standby, and the real Compose stack runs that
+topology end-to-end with an in-container failover smoke; Phase 4 exit (T-0022)
+and fault injection remain planned.
 
 See [project status](docs/STATUS.md) for the current phase table and next
 tasks. The [architecture](docs/ARCHITECTURE.md), [development guide](docs/DEVELOPMENT.md),
@@ -23,9 +26,10 @@ authored under `docs/ai-guidance/`; `AGENTS.md` and
 
 ## Bootstrap
 
-This project provides a C++20 CMake build, shared-memory library, smoke tests,
-and a containerized runtime baseline. Worker processes, supervisor, failover,
-and fault-injection features remain planned for later phases.
+This project provides a C++20 CMake build, shared-memory library, worker and
+monitor runtimes, a supervisor with crash failover, smoke tests, and a
+containerized Compose runtime baseline. Fault injection (Phase 5) and the
+Phase 4 exit gate (T-0022) remain planned.
 
 ### Host Requirements
 
@@ -172,7 +176,10 @@ docker run --rm --workdir /workspace -v "$PWD:/workspace" \
 	         ctest --preset clang-verify"
 ```
 
-Validate and exercise the default Compose stack:
+Validate and exercise the default Compose stack. Phase 4 (T-0021, DEC-0011 #4
+and #8) runs a single `supervisor` service that forks the monitor and the hot
+A/B + standby C workers inside one container, sharing `/dev/shm` and
+`/run/safety-critical-ha`:
 
 ```bash
 docker compose config --quiet
@@ -185,8 +192,11 @@ docker compose down --volumes --remove-orphans
 ```
 
 The default Compose stack does not start the profile-gated `perturb` service.
-The repository's smoke script runs the Compose validation, startup, version
-check, status display, and teardown sequence:
+`./run_demo.sh` runs the sequence above plus the in-container failover smoke
+(`containers/compose/failover-smoke.sh`): SIGKILLs hot physical A inside the
+running supervisor and verifies the container stays healthy, the physical-A
+pidfile points at a fresh live pid, and the supervisor's forwarded monitor
+stream shows standby C promoted to RUNNING:
 
 ```bash
 ./run_demo.sh

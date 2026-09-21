@@ -135,16 +135,17 @@ jobs:
           if-no-files-found: warn
 
   docker-compose-smoke:
-    name: Compose runtime smoke
+    name: Compose runtime + failover smoke
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - name: Validate stack startup and cleanup
+      - name: Validate stack startup, failover, and cleanup
         run: |
           docker compose config --quiet
           docker compose build
           docker compose up --wait --no-build
           docker compose ps
           docker compose exec supervisor safety-critical-ha --version
+          ./containers/compose/failover-smoke.sh
           docker compose down --volumes --remove-orphans

@@ -51,6 +51,11 @@ MonitorStats run_monitor_loop(const MonitorConfig& cfg,
 
     std::array<WorkerTrack<typename ClockT::time_point>, safety_crit::shared_memory::kMaxWorkers>
         tracks;
+    // Alerts carry the physical worker index (T-0021: supervisor and Compose
+    // smoke both key off `alert.worker` to distinguish failover participants).
+    for (std::size_t i = 0; i < safety_crit::shared_memory::kMaxWorkers; ++i) {
+        tracks[i].worker = i;
+    }
     MonitorStats stats;
     std::vector<Alert> alerts;
 
