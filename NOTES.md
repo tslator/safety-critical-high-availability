@@ -413,7 +413,7 @@ New: supervisor stdout witness events (`first post-failover record observed in <
 |Compose failover smoke (`containers/compose/failover-smoke.sh`: SIGKILL physical A in-container → verify healthy, fresh physical-A pidfile, `worker_running worker:2` promotion edge, region survives)|PASS - 5 consecutive runs|
 |Repeated crash recovery timing (`scripts/phase4-failover-timing.sh 10`)|PASS - min 84 ms, median 84 ms, max 91 ms, avg 85 ms; 0/10 iterations over `<100 ms` SLA; `a_corruptions=0` and `a_first_post_failover=1` on every iteration|
 |`./scripts/sync-agent-guidance.sh --check`|PASS - adapters byte-identical (CORE.md untouched)|
-|Hosted CI / Phase Exit Gate|PASS - see [docs/evidence/phase-4.md](docs/evidence/phase-4.md) for the hosted run link (populated once CI completes against the Phase 4 exit commit) — **Phase 4 exit gate satisfied**|
+|Hosted CI / Phase Exit Gate|PASS - run 35668187681 on commit 9013df9 (2026-09-21): all ten jobs succeeded — AI guidance adapter drift check, native GoogleTest, native Catch2, ASan+UBSan x2, TSan x2, clang-verify (pinned image), container image smoke, Compose runtime + failover smoke — **Phase 4 exit gate satisfied**|
 
 Phase Exit Gate table:
 | Required evidence | Source | Status |
@@ -425,4 +425,4 @@ Phase Exit Gate table:
 | Priority order enforced when privileged; unprivileged fallback explicit | G4.5 | PASS (T-0020 Result; runtime scheduling tests) |
 | Real Compose runtime smoke and failover | G4.6 | PASS (above, 5 consecutive in-container SIGKILL runs) |
 | Full local matrix green | exit | PASS (above) |
-| Hosted CI green on exit commit | exit | PASS (link in docs/evidence/phase-4.md "Hosted CI" section) |
+| Hosted CI green on exit commit | exit | PASS (run 35668187681 on 9013df9) |

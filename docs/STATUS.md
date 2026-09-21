@@ -1,7 +1,7 @@
 # Project Status
 
 - Current phase: Phase 4 complete (G4.1–G4.6 + exit gate) — Phase 5 planning to be initiated
-- Current gate: G4.6 complete (Phase 4 exit); hosted CI run recorded in [Phase 4 evidence](evidence/phase-4.md)
+- Current gate: G4.6 complete (Phase 4 exit; hosted run 35668187681 on commit 9013df9)
 - Last updated: 2026-09-21
 
 ## Phase Status

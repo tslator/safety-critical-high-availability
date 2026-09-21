@@ -41,4 +41,5 @@ under "Phase 4 Exit". Summary of what closed the phase:
 - Repeated crash recovery timing (10 iterations on the reference host):
   min 84 ms, median 84 ms, max 91 ms, avg 85 ms — every iteration within the
   `<100 ms` target with zero corruptions across the drain witness.
-- Hosted CI run recorded in the evidence file.
+- Hosted CI green: run 35668187681 on commit `9013df9` (2026-09-21), all ten
+  jobs succeeded — [run link](https://github.com/tslator/safety-critical-high-availability/actions/runs/35668187681).

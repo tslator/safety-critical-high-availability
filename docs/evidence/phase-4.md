@@ -209,8 +209,12 @@ always 1.
 
 ### Hosted CI
 
-Recorded at T-0022 merge (see commit reference on the entry above; run link
-populated once the hosted CI finishes against the Phase 4 exit commit).
+PASS — [run 35668187681](https://github.com/tslator/safety-critical-high-availability/actions/runs/35668187681)
+on commit `9013df9` (2026-09-21): all ten jobs succeeded — AI guidance adapter
+drift check, native GoogleTest, native Catch2, sanitizers (ASan+UBSan ×
+GoogleTest/Catch2), sanitizers (TSan × GoogleTest/Catch2), Clang verification
+(pinned `safety-critical-ha:verify-clang-14`), container image smoke, and
+Compose runtime + failover smoke — **Phase 4 exit gate satisfied**.
 
 ### Residual risks and Phase 5 hand-off
 
