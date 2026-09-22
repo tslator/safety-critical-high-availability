@@ -476,4 +476,4 @@ Rule: an epoch bump implies every in-flight producer claim from the prior epoch 
 |Compose `up --wait` healthy + `containers/compose/failover-smoke.sh`|PASS 5 consecutive runs|
 |`scripts/phase4-failover-timing.sh 5` (regression check on supervisor drain timing)|PASS min/median/max/avg 84/84/90/85 ms, 0/5 over `<100 ms` SLA|
 |`./scripts/sync-agent-guidance.sh --check`|PASS adapters byte-identical|
-|Hosted CI|PASS — see [T-0024 task record](docs/tasks/T-0024-abandoned-claim-rule.md) for the run link|
+|Hosted CI|PASS - run 35768199979 on commit 97ac5f5 (2026-09-22): all ten jobs succeeded|

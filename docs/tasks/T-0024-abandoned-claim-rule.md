@@ -73,3 +73,5 @@ Validation matrix:
 | Compose `up --wait` healthy + `containers/compose/failover-smoke.sh` | PASS 5 consecutive |
 | `scripts/phase4-failover-timing.sh 5` (regression check on supervisor drain timing) | PASS min/median/max/avg 84/84/90/85 ms, 0/5 over `<100 ms` |
 | `./scripts/sync-agent-guidance.sh --check` | PASS |
+
+Hosted CI: [run 35768199979](https://github.com/tslator/safety-critical-high-availability/actions/runs/35768199979) on commit `97ac5f5` (2026-09-22), all ten jobs green.
