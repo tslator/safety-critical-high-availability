@@ -50,6 +50,15 @@ inline constexpr bool is_power_of_two_v = (N > 0) && ((N & (N - 1)) == 0);
 //   consumer claims position p by CAS-ing head_ from p to p+1, reads the
 //   payload, then stores
 //     cells_[i].sequence = ready(p+n)   (release)  -- "released"
+//
+// Abandoned producer claims (T-0024, DEC-0012 #2): if the producer crashes
+// between the tail_ CAS and the commit release, cells_[i].sequence is left
+// at ready(p) (never committed). Rule: an epoch bump implies every in-flight
+// claim from the prior epoch is abandoned. `transfer_ownership` (in
+// shared_region.cpp) rolls tail_ back to the last committed sequence on
+// takeover so the new owner resumes from a quiescent ring; never
+// force-commits an in-flight slot. Consumers never pop a slot from a prior
+// epoch.
 // The released value p + n is exactly the slot's next-lap ready marker, so a
 // re-lapping producer observes its claim condition only after release.
 // Claim soundness: the CAS on tail_/head_ gives each position a unique owner,

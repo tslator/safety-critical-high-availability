@@ -76,6 +76,81 @@ SAFETY_CRIT_TEST_CASE(SharedRegion, InitializeAndVerify) {
     }
 }
 
+SAFETY_CRIT_TEST_CASE(SharedRegion, AbandonedClaimOnFirstSlotRollsBackTail) {
+    // T-0024 (DEC-0012 #2): an epoch bump implies every in-flight claim
+    // from the prior epoch is abandoned. The new owner resumes from the
+    // last committed sequence; never force-commit an in-flight slot.
+    // Initial-slot variant: physical A claims position 0 (tail_ advances
+    // to 1) and crashes before commit (slots()[0].sequence remains at
+    // ready(0) = 0).
+    SharedRegion region;
+    SAFETY_CRIT_ASSERT(initialize(region));
+    SAFETY_CRIT_ASSERT(region.rings[0].tail_.load(std::memory_order_relaxed) == 0u);
+    region.rings[0].tail_.store(1u, std::memory_order_relaxed);
+    SAFETY_CRIT_ASSERT(region.rings[0].slots()[0].sequence.load(std::memory_order_relaxed) == 0u);
+
+    OwnershipToken old_owner;
+    SAFETY_CRIT_ASSERT(read_ownership(region, 0, old_owner));
+    OwnershipToken replacement;
+    SAFETY_CRIT_ASSERT(transfer_ownership(region, 0, old_owner, 2u, 1u, replacement));
+
+    SAFETY_CRIT_ASSERT(region.rings[0].tail_.load(std::memory_order_relaxed) == 0u);
+    SAFETY_CRIT_ASSERT(region.rings[0].head_.load(std::memory_order_relaxed) == 0u);
+}
+
+SAFETY_CRIT_TEST_CASE(SharedRegion, AbandonedClaimOnInteriorSlotRollsBackTail) {
+    SharedRegion region;
+    SAFETY_CRIT_ASSERT(initialize(region));
+    struct Payload {
+        std::uint32_t worker_idx;
+        std::uint64_t tick;
+    };
+    for (std::uint64_t tick = 0; tick < 3u; ++tick) {
+        SAFETY_CRIT_ASSERT(push(region, 0u, Payload{0u, tick}));
+    }
+    SAFETY_CRIT_ASSERT(region.rings[0].tail_.load(std::memory_order_relaxed) == 3u);
+    SAFETY_CRIT_ASSERT(region.rings[0].head_.load(std::memory_order_relaxed) == 0u);
+
+    // Abandon a claim at position 3: advance tail_ to 4 without committing.
+    region.rings[0].tail_.store(4u, std::memory_order_relaxed);
+    SAFETY_CRIT_ASSERT(region.rings[0].slots()[3].sequence.load(std::memory_order_relaxed) == 3u);
+
+    OwnershipToken old_owner;
+    SAFETY_CRIT_ASSERT(read_ownership(region, 0, old_owner));
+    OwnershipToken replacement;
+    SAFETY_CRIT_ASSERT(transfer_ownership(region, 0, old_owner, 2u, 1u, replacement));
+
+    // Abandoned claim rolled back to last committed sequence.
+    SAFETY_CRIT_ASSERT(region.rings[0].tail_.load(std::memory_order_relaxed) == 3u);
+    SAFETY_CRIT_ASSERT(region.rings[0].head_.load(std::memory_order_relaxed) == 0u);
+}
+
+SAFETY_CRIT_TEST_CASE(SharedRegion, TransferDoesNotRollBackCommittedSlots) {
+    SharedRegion region;
+    SAFETY_CRIT_ASSERT(initialize(region));
+    struct Payload {
+        std::uint32_t worker_idx;
+        std::uint64_t tick;
+    };
+    SAFETY_CRIT_ASSERT(push(region, 0u, Payload{0u, 42u}));
+    SAFETY_CRIT_ASSERT(region.rings[0].tail_.load(std::memory_order_relaxed) == 1u);
+
+    OwnershipToken old_owner;
+    SAFETY_CRIT_ASSERT(read_ownership(region, 0, old_owner));
+    OwnershipToken replacement;
+    SAFETY_CRIT_ASSERT(transfer_ownership(region, 0, old_owner, 2u, 1u, replacement));
+
+    // Committed slot at position 0 is preserved: tail_ stays at 1.
+    SAFETY_CRIT_ASSERT(region.rings[0].tail_.load(std::memory_order_relaxed) == 1u);
+    SAFETY_CRIT_ASSERT(region.rings[0].slots()[0].sequence.load(std::memory_order_acquire) == 1u);
+
+    // The committed record must be poppable after takeover: proves the
+    // takeover rule did not destroy valid data.
+    Payload popped{};
+    SAFETY_CRIT_ASSERT(region.rings[0].try_pop(popped));
+    SAFETY_CRIT_ASSERT(popped.tick == 42u);
+}
+
 SAFETY_CRIT_TEST_CASE(SharedRegion, OwnershipFencesStaleGeneration) {
     SharedRegion region;
     SAFETY_CRIT_ASSERT(initialize(region));

@@ -34,9 +34,8 @@
 
 ## Next Work
 
-1. T-0024: abandoned producer claim rule (Phase 4 tail fix, P0 blocker for
-   memory-corruption scenarios).
-2. Then T-0025 → T-0026 → T-0027 → T-0028 → T-0029 → T-0030 → T-0031 in
+1. T-0025: supervisor stall recovery (SIGCONT then SIGKILL escalation).
+2. Then T-0026 → T-0027 → T-0028 → T-0029 → T-0030 → T-0031 in
    dependency order.
 3. Optional tooling follow-ups from DEC-0008: `clang-static-analysis`
    (advisory) and `clang-sanitizers` presets.

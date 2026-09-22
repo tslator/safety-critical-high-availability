@@ -176,6 +176,36 @@ bool transfer_ownership(SharedRegion& region, std::size_t logical_ring,
         return false;
     }
     ownership.epoch.store(expected.epoch + 2u, std::memory_order_release);
+    // T-0024 (DEC-0012 #2): an epoch bump implies every in-flight claim
+    // from the prior epoch is abandoned. If the previous producer advanced
+    // tail_ via a claim CAS but died before the commit release, the slot
+    // at tail_-1 still holds ready(tail_-1) (never committed). Roll tail_
+    // back to the last committed position so the new owner resumes from a
+    // quiescent ring; never force-commit an in-flight slot. A while loop
+    // is defensive only -- under the one-owner-per-epoch rule at most one
+    // abandoned claim can exist per handoff, and the loop always halts
+    // once tail_ reaches head_ or the slot state is not "abandoned".
+    {
+        auto& ring = region.rings[logical_ring];
+        for (;;) {
+            const std::uint64_t tail = ring.tail_.load(std::memory_order_relaxed);
+            const std::uint64_t head = ring.head_.load(std::memory_order_relaxed);
+            if (tail <= head) {
+                break;
+            }
+            const std::uint64_t prior = tail - 1u;
+            const std::uint64_t seq =
+                ring.slots()[prior & RingBuffer::kMask].sequence.load(std::memory_order_acquire);
+            if (seq != prior) {
+                break;  // prior slot was committed or released: nothing to roll back.
+            }
+            std::uint64_t expected_tail = tail;
+            if (ring.tail_.compare_exchange_weak(expected_tail, prior, std::memory_order_relaxed,
+                                                 std::memory_order_relaxed)) {
+                break;  // single rollback per handoff is sufficient.
+            }
+        }
+    }
     refresh_region_integrity(region);
     replacement = OwnershipToken{static_cast<std::uint32_t>(logical_ring), new_physical_owner,
                                  new_process_generation, expected.epoch + 2u};

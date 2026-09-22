@@ -452,3 +452,28 @@ New: `owned_logical_ring(const SharedRegion&, std::size_t physical_idx)` helper 
 |`scripts/phase4-failover-timing.sh 5` (regression check on supervisor drain timing)|PASS min/median/max/avg 85 ms, 0/5 over `<100 ms` SLA|
 |`./scripts/sync-agent-guidance.sh --check`|PASS adapters byte-identical|
 |Hosted CI|PASS - run 35761919434 on commit c14934c (2026-09-22): all ten jobs succeeded|
+
+---
+
+Gate: G5.1 (Phase 5 T-0024 abandoned producer claim rule)
+Date: 2026-09-22
+Host: x86_64 Linux, `g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0`; clang leg in the pinned `safety-critical-ha:verify-clang-14` image
+
+Phase 4 tail fix (DEC-0012 #2, P0 blocker for memory-corruption scenarios T-0027/T-0029). TDD red → green: three tests written first against the pre-fix code — `AbandonedClaimOnFirstSlotRollsBackTail` and `AbandonedClaimOnInteriorSlotRollsBackTail` observed to FAIL, `TransferDoesNotRollBackCommittedSlots` PASS as control. Post-fix all three PASS; committed payload verified poppable after takeover.
+
+Rule: an epoch bump implies every in-flight producer claim from the prior epoch is abandoned. New owner resumes from the last committed sequence; never force-commits an in-flight slot.
+
+|Command / Check|Result|
+|---|---|
+|GoogleTest (plain, fresh dir)|PASS 99/99 (96 pre-existing + 3 new)|
+|Catch2 (plain, fresh dir)|PASS 99/99|
+|ASan+UBSan GoogleTest (fresh dir)|PASS 91/91|
+|ASan+UBSan Catch2 (fresh dir)|PASS 91/91|
+|TSan GoogleTest (`setarch --addr-no-randomize`, fresh dir)|PASS 91/91, zero race reports|
+|TSan Catch2 (`setarch --addr-no-randomize`, fresh dir)|PASS 91/91, zero race reports|
+|clang-verify (pinned image, clang-14 preset)|PASS 99/99, zero clang warnings|
+|Docker build + `--version`|PASS|
+|Compose `up --wait` healthy + `containers/compose/failover-smoke.sh`|PASS 5 consecutive runs|
+|`scripts/phase4-failover-timing.sh 5` (regression check on supervisor drain timing)|PASS min/median/max/avg 84/84/90/85 ms, 0/5 over `<100 ms` SLA|
+|`./scripts/sync-agent-guidance.sh --check`|PASS adapters byte-identical|
+|Hosted CI|PASS — see [T-0024 task record](docs/tasks/T-0024-abandoned-claim-rule.md) for the run link|

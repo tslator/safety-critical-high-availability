@@ -46,3 +46,32 @@ here or in `NOTES.md`.
   0/5 iterations over `<100 ms` SLA.
 - `./scripts/sync-agent-guidance.sh --check` PASS.
 - Hosted CI: [run 35761919434](https://github.com/tslator/safety-critical-high-availability/actions/runs/35761919434) on commit `c14934c` (2026-09-22), all ten jobs green.
+
+## T-0024 Result
+
+- Rule: an epoch bump implies every in-flight producer claim from the prior
+  epoch is abandoned. New owner resumes from the last committed sequence;
+  never force-commits an in-flight slot. Consumers never pop a slot from a
+  prior epoch.
+- Implementation: rollback loop at the end of `transfer_ownership` in
+  `shared-memory/src/shared_region.cpp` — CAS tail_ back to head_ whenever
+  the slot at tail_-1 still holds `ready(tail_-1)` (never committed since
+  the prior lap's release).
+- Rule documentation: comment block in
+  `shared-memory/include/safety_crit/shared_memory/ring_buffer.hpp`.
+- TDD red step (pre-fix): `SharedRegion.AbandonedClaimOnFirstSlotRollsBackTail`
+  and `SharedRegion.AbandonedClaimOnInteriorSlotRollsBackTail` observed to
+  FAIL; `SharedRegion.TransferDoesNotRollBackCommittedSlots` PASS as the
+  control. All three PASS post-fix; committed payload verified poppable
+  after takeover.
+- GoogleTest 99/99 (96 pre-existing + 3 new); Catch2 99/99.
+- ASan+UBSan x2: 91/91 each (fork-integration cases skip under sanitizers,
+  established precedent).
+- TSan x2 under `setarch --addr-no-randomize`: 91/91 each, zero race reports.
+- clang-verify (pinned image, clang-14 preset): 99/99, zero clang warnings.
+- Docker build (`--version`) PASS; Compose `up --wait` healthy +
+  `containers/compose/failover-smoke.sh` green 5 consecutive times.
+- `scripts/phase4-failover-timing.sh 5`: min/median/max/avg 84/84/90/85 ms,
+  0/5 iterations over `<100 ms` SLA (Phase 4 baseline preserved).
+- `./scripts/sync-agent-guidance.sh --check` PASS.
+- Hosted CI run link: recorded below once CI completes.
