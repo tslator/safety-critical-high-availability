@@ -24,3 +24,25 @@ This record is the evidence target for
 
 Each closed task must link implementation and durable command/result evidence
 here or in `NOTES.md`.
+
+## T-0023 Result
+
+- Implementation: `owned_logical_ring()` helper in
+  `monitors/include/safety_crit/monitors/health.hpp`; `poll_worker` reads the
+  physical worker's owned logical ring's tail (falling back to the home ring
+  for standby workers, whose status word is IDLE and never triggers the
+  stall rule).
+- Regression test: `MonitorsLoop.AttributionFollowsLogicalRingAfterPromotion`
+  in `monitors/tests/monitors_loop_test.cpp`. Written first (TDD red);
+  failed against the pre-fix code and passes after.
+- GoogleTest 96/96 (95 pre-existing + 1 new); Catch2 96/96.
+- ASan+UBSan x2: 88/88 each (fork-integration cases skip under sanitizers,
+  established precedent).
+- TSan x2 under `setarch --addr-no-randomize`: 88/88 each, zero race reports.
+- clang-verify (pinned image, clang-14 preset): 96/96, zero clang warnings.
+- Docker build (`--version`) PASS; Compose `up --wait` healthy +
+  `containers/compose/failover-smoke.sh` green 5 consecutive times.
+- `scripts/phase4-failover-timing.sh 5` unchanged: min/median/max/avg 85 ms,
+  0/5 iterations over `<100 ms` SLA.
+- `./scripts/sync-agent-guidance.sh --check` PASS.
+- Hosted CI run link: recorded below once CI completes.

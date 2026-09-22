@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 
 #include "safety_crit/monitors/monitor_config.hpp"
 #include "safety_crit/shared_memory/atomic_flags.hpp"
@@ -207,15 +208,40 @@ void observe_worker(WorkerTrack<TimePoint>& track, const MonitorConfig& cfg,
     }
 }
 
+// Look up the logical ring currently owned by a physical worker (T-0023,
+// Phase 5 tail fix). Returns the logical-ring index when the physical
+// worker owns a ring for the current epoch; nullopt when the worker is a
+// standby (owns no ring). The caller falls back to the physical home ring
+// in the standby case, which is safe because standby status is IDLE and
+// the stall rule only applies to RUNNING.
+inline std::optional<std::size_t> owned_logical_ring(
+    const safety_crit::shared_memory::SharedRegion& region, std::size_t physical_idx) {
+    for (std::size_t logical = 0; logical < safety_crit::shared_memory::kMaxWorkers; ++logical) {
+        safety_crit::shared_memory::OwnershipToken token;
+        if (safety_crit::shared_memory::read_ownership(region, logical, token) &&
+            token.physical_owner == physical_idx) {
+            return logical;
+        }
+    }
+    return std::nullopt;
+}
+
 // Poll one worker: reads its status cell and ring tail (acquire loads only
 // -- the external-observer path, DEC-0010 #1). `process_alive` is the
 // caller's pidfile liveness verdict (the liveness check itself lives with
-// the pidfile module, T3.2). Region access lives here, in exactly one place.
+// the pidfile module, T3.2). Ring tail is read from the logical ring the
+// physical worker currently owns (T-0023), not the physical home ring, so
+// a promoted standby (physical C owning logical A) is observed on its
+// output ring. Standby workers own no ring and fall back to their home
+// index (their status word is IDLE and the stall rule never fires).
+// Region access lives here, in exactly one place.
 inline WorkerObservation poll_worker(const safety_crit::shared_memory::SharedRegion& region,
                                      std::size_t worker_idx, bool process_alive) {
     WorkerObservation obs;
     obs.status = region.worker_status[worker_idx].status.load(std::memory_order_acquire);
-    obs.ring_tail = region.rings[worker_idx].tail_.load(std::memory_order_acquire);
+    const auto owned = owned_logical_ring(region, worker_idx);
+    const std::size_t tail_index = owned.value_or(worker_idx);
+    obs.ring_tail = region.rings[tail_index].tail_.load(std::memory_order_acquire);
     obs.process_alive = process_alive;
     return obs;
 }

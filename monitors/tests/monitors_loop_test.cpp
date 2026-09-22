@@ -217,6 +217,46 @@ SAFETY_CRIT_TEST_CASE(MonitorsLoop, BoundedStopLatency) {
     SAFETY_CRIT_ASSERT(poll_number == 3u);
 }
 
+SAFETY_CRIT_TEST_CASE(MonitorsLoop, AttributionFollowsLogicalRingAfterPromotion) {
+    // T-0023 (Phase 5 tail): after physical C is promoted to own logical
+    // ring A, the monitor must observe C's output tail on ring A, not on
+    // C's home ring (index 2). Before the fix the home ring never advances
+    // post-promotion, so the loop latched a spurious worker_stalled for
+    // physical 2 within one stall threshold window.
+    FakeClock::reset();
+    shm::SharedRegion region;
+    SAFETY_CRIT_ASSERT(shm::initialize(region));
+
+    shm::OwnershipToken current;
+    SAFETY_CRIT_ASSERT(shm::read_ownership(region, 0u, current));
+    shm::OwnershipToken promoted;
+    SAFETY_CRIT_ASSERT(shm::transfer_ownership(region, 0u, current, 2u, 1u, promoted));
+
+    // Standby C is now hot on logical ring A (index 0).
+    set_status(region, 2, to_bits(WorkerStatusFlag::kRunning));
+
+    const MonitorConfig cfg = make_cfg(std::chrono::milliseconds(10),
+                                       std::chrono::milliseconds(50));
+    std::vector<Alert> emitted;
+    int polls_run = 0;
+    (void)run_monitor_loop<FakeClock>(
+        cfg, region, std::stop_token(), kNoSignal, 20,
+        [&](const Alert& a) { emitted.push_back(a); },
+        [](std::size_t) { return true; },
+        [&]() {
+            FakeClock::advance(std::chrono::milliseconds(10));
+            ++polls_run;
+            // Physical C pushes onto logical ring A each iteration.
+            region.rings[0].tail_.store(region.rings[0].tail_.load(std::memory_order_relaxed) + 1u,
+                                        std::memory_order_release);
+        });
+
+    SAFETY_CRIT_ASSERT(polls_run > 5);  // enough iterations to exceed 50 ms stall threshold
+    for (const Alert& a : emitted) {
+        SAFETY_CRIT_ASSERT(!(a.worker == 2u && a.kind == AlertKind::kWorkerStalled));
+    }
+}
+
 SAFETY_CRIT_TEST_CASE(MonitorsLoop, AlertsCarryPhysicalWorkerIndex) {
     FakeClock::reset();
     shm::SharedRegion region;

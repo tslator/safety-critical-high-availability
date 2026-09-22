@@ -1,7 +1,7 @@
 # T-0023: Phase 5 Monitor Logical-Ring Attribution
 
-- Status: Planned
-- Owner: Unassigned
+- Status: Complete
+- Owner: AI agent (opencode)
 - Priority: High
 - Depends on: Phase 4 exit (no upstream task)
 - Phase: Phase 5
@@ -34,4 +34,36 @@ every stall scenario after a promotion produces false positives.
 
 ## Evidence
 
-Record implementation and validation in [Phase 5 evidence](../evidence/phase-5.md).
+Implementation: `monitors/include/safety_crit/monitors/health.hpp` — new
+`owned_logical_ring(region, physical_idx)` helper iterates logical rings,
+returns the one whose `read_ownership` reports this physical worker;
+`poll_worker` reads the owned ring's tail, falling back to the physical
+home index for standby workers (whose status word is IDLE so the stall rule
+never fires). `#include <optional>` added.
+
+Regression test: `MonitorsLoop.AttributionFollowsLogicalRingAfterPromotion`
+in `monitors/tests/monitors_loop_test.cpp`. The test transfers ownership of
+logical ring 0 to physical worker 2 (simulating standby C promoted to hot
+on logical A), sets physical 2 status to RUNNING, advances only ring 0's tail
+per pacer tick past the 50 ms stall threshold, and asserts no
+`worker_stalled` alert for physical 2 is emitted. The test failed
+(`ctest -R AttributionFollowsLogicalRingAfterPromotion` reported FAILED)
+before the fix and passes after; TDD red → green transition captured.
+
+Validation matrix:
+
+| Configuration | Result |
+|---|---|
+| GoogleTest (plain, fresh dir) | PASS 96/96 (95 pre-existing + 1 new) |
+| Catch2 (plain, fresh dir) | PASS 96/96 |
+| ASan+UBSan GoogleTest (fresh dir) | PASS 88/88 |
+| ASan+UBSan Catch2 (fresh dir) | PASS 88/88 |
+| TSan GoogleTest (`setarch --addr-no-randomize`, fresh dir) | PASS 88/88, zero race reports |
+| TSan Catch2 (`setarch --addr-no-randomize`, fresh dir) | PASS 88/88, zero race reports |
+| clang-verify (pinned `safety-critical-ha:verify-clang-14`, clang-14 preset) | PASS 96/96, zero clang warnings |
+| Docker build (image `safety-critical-ha:phase0`, `--version`) | PASS |
+| Compose `up --wait` healthy + failover smoke | PASS 5/5 consecutive |
+| `scripts/phase4-failover-timing.sh 5` (supervisor drain unchanged) | PASS min/median/max/avg 85 ms, 0/5 over `<100 ms` |
+| `./scripts/sync-agent-guidance.sh --check` | PASS |
+
+Hosted CI run link: recorded in this file after CI completes.

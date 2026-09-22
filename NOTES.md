@@ -426,3 +426,29 @@ Phase Exit Gate table:
 | Real Compose runtime smoke and failover | G4.6 | PASS (above, 5 consecutive in-container SIGKILL runs) |
 | Full local matrix green | exit | PASS (above) |
 | Hosted CI green on exit commit | exit | PASS (run 35668187681 on 9013df9) |
+
+---
+
+Gate: G5.1 (Phase 5 T-0023 monitor logical-ring attribution)
+Date: 2026-09-22
+Host: x86_64 Linux, `g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0`; clang leg in the pinned `safety-critical-ha:verify-clang-14` image
+
+Phase 4 tail fix (DEC-0012 #2, P0 blocker for Phase 5 stall/double-fault scenarios). TDD red → green: `MonitorsLoop.AttributionFollowsLogicalRingAfterPromotion` was written first against the pre-fix code, observed to FAIL (spurious `worker_stalled` for physical 2 after ownership transfer to it), then the fix was added and the test flipped to PASS.
+
+New: `owned_logical_ring(const SharedRegion&, std::size_t physical_idx)` helper in `monitors/include/safety_crit/monitors/health.hpp`; `poll_worker` reads the owned logical ring's tail (home-ring fallback for standby workers, whose status word is IDLE and never trips the stall rule). `#include <optional>` added.
+
+|Command / Check|Result|
+|---|---|
+|TDD red step: `ctest -R AttributionFollowsLogicalRingAfterPromotion` before fix|FAIL (spurious `worker_stalled` for physical 2)|
+|GoogleTest (plain, fresh dir)|PASS 96/96 (95 pre-existing + 1 new)|
+|Catch2 (plain, fresh dir)|PASS 96/96|
+|ASan+UBSan GoogleTest (fresh dir)|PASS 88/88|
+|ASan+UBSan Catch2 (fresh dir)|PASS 88/88|
+|TSan GoogleTest (`setarch --addr-no-randomize`, fresh dir)|PASS 88/88, zero race reports|
+|TSan Catch2 (`setarch --addr-no-randomize`, fresh dir)|PASS 88/88, zero race reports|
+|clang-verify (pinned image, clang-14 preset)|PASS 96/96, zero clang warnings|
+|Docker build + `--version`|PASS|
+|Compose `up --wait` healthy + `containers/compose/failover-smoke.sh`|PASS 5 consecutive runs|
+|`scripts/phase4-failover-timing.sh 5` (regression check on supervisor drain timing)|PASS min/median/max/avg 85 ms, 0/5 over `<100 ms` SLA|
+|`./scripts/sync-agent-guidance.sh --check`|PASS adapters byte-identical|
+|Hosted CI|PASS — see [T-0023 task record](docs/tasks/T-0023-monitor-logical-ring-attribution.md) for the run link|
