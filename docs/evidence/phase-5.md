@@ -114,3 +114,43 @@ here or in `NOTES.md`.
   0/5 iterations over `<100 ms` SLA (Phase 4 baseline preserved).
 - `./scripts/sync-agent-guidance.sh --check` PASS.
 - Hosted CI: [run 35777723370](https://github.com/tslator/safety-critical-high-availability/actions/runs/35777723370) on commit `8236b71` (2026-09-22), all ten jobs green.
+
+## T-0026 Result
+
+- Flag: `WorkerStatusFlag::kDegraded` (bit 5) reserved in
+  `shared-memory/include/safety_crit/shared_memory/atomic_flags.hpp` as a
+  semantics-only addition; `kRegionVersion` stays 4.
+- Implementation: `recover_worker_crash` in `supervisor/src/supervisor.cpp`
+  now handles ANY physical worker (T-0023 `owned_logical_ring` attribution).
+  Promotion goes to the standby physical process only when the standby owns
+  no ring other than its home index (a standby restart always restarts as
+  standby, DEC-0012 #4); otherwise the crashed owner's ring is DEGRADED:
+  `kDegraded` set in the ring's status cell,
+  `supervisor: logical ring N degraded (reason=standby_exhausted)` emitted
+  exactly once, and the bit re-asserted every loop (a standby restart
+  stores its own status word). `SupervisorState::kDegraded` is sticky
+  (crash alerts and stall-recovery exits do not mask it) and keeps the
+  existing exit-code-4 shutdown convention.
+- TDD red step: integration tests written first;
+  `PromotesStandbyOnPhysicalBCrash` and `DegradesSecondRingOnSimultaneousCrash`
+  observed FAILING against the pre-fix `physical_worker == 0` hard-coding;
+  `CrashRecoveryIdempotentForRepeatingKill` PASS as the control. All PASS
+  post-fix. Tests: `DegradedStatusFlagReservedAndDistinct` (bit distinct,
+  reserved), `PromotesStandbyOnPhysicalBCrash` (C promotes to logical B, no
+  DEGRADED), `DegradesSecondRingOnSimultaneousCrash` (tight-window double
+  SIGKILL: C promotes ring 0 (lowest-index tie-break), ring 1 DEGRADED with
+  exactly one stdout event, both replacement pidfiles live as standby, exit
+  code 4), `CrashRecoveryIdempotentForRepeatingKill`.
+- Timing-sensitive tests repeated 5×: 5/5 PASS.
+- GoogleTest 109/109 (105 pre-existing + 4 new); Catch2 109/109.
+- ASan+UBSan x2: 101/101 and 97/97 (fork-integration cases skip under
+  sanitizers, established precedent).
+- TSan x2 under `setarch --addr-no-randomize`: 101/101 each, zero race reports.
+- clang-verify (pinned image, clang-14 preset): 109/109; zero warnings from
+  supervisor/shared-memory sources (pre-existing `worker_entry.cpp` lambda
+  capture warning remains out of scope).
+- Docker build (`--version`) PASS; Compose `up --wait` healthy +
+  `containers/compose/failover-smoke.sh` green 5 consecutive times.
+- `scripts/phase4-failover-timing.sh 5`: min/median/max/avg 84/84/91/85 ms,
+  0/5 iterations over `<100 ms` SLA (Phase 4 baseline preserved).
+- `./scripts/sync-agent-guidance.sh --check` PASS.

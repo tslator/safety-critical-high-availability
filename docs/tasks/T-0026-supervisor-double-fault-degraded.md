@@ -1,6 +1,6 @@
 # T-0026: Phase 5 Supervisor Double-Fault and DEGRADED State
 
-- Status: Planned
+- Status: Complete
 - Owner: Unassigned
 - Priority: High
 - Depends on: T-0023, T-0024, T-0025

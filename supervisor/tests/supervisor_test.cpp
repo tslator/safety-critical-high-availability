@@ -11,6 +11,7 @@
 #include <thread>
 
 #include "safety_crit/supervisor/supervisor.hpp"
+#include "safety_crit/shared_memory/atomic_flags.hpp"
 #include "safety_crit/shared_memory/shm_attach.hpp"
 #include "safety_crit/shared_memory/shared_region.hpp"
 #include "safety_crit/workers/workload.hpp"
@@ -48,6 +49,22 @@ bool wait_for_output(int fd, std::string& buffer, std::string_view needle,
         }
     }
     return buffer.find(needle) != std::string::npos;
+}
+
+// Drains a captured stdout pipe to EOF (safe once the writer process has
+// been reaped) and returns everything read.
+std::string drain_pipe(int fd) {
+    std::string out;
+    for (;;) {
+        char chunk[512];
+        const ssize_t count = ::read(fd, chunk, sizeof(chunk));
+        if (count > 0) {
+            out.append(chunk, static_cast<std::size_t>(count));
+        } else {
+            break;
+        }
+    }
+    return out;
 }
 
 // Waits for the worker pidfile and returns the recorded pid (0 on timeout).
@@ -243,6 +260,218 @@ SAFETY_CRIT_TEST_CASE(Supervisor, EscalatesStalledWorkerToCrashRecovery) {
 
     // The SIGKILL escalation went through the existing crash-recovery path:
     // standby (physical 2) owns logical ring 0.
+    auto region = safety_crit::shared_memory::SharedRegionHandle::create_or_open(
+        region_name.c_str());
+    SAFETY_CRIT_ASSERT(region.ok());
+    safety_crit::shared_memory::OwnershipToken ownership;
+    SAFETY_CRIT_ASSERT(safety_crit::shared_memory::read_ownership(*region.get(), 0u, ownership));
+    SAFETY_CRIT_ASSERT(ownership.physical_owner == 2u);
+    region.detach();
+    std::error_code ec;
+    std::filesystem::remove_all(pid_dir, ec);
+    (void)safety_crit::shared_memory::SharedRegionHandle::destroy(region_name.c_str());
+}
+
+SAFETY_CRIT_TEST_CASE(Supervisor, DegradedStatusFlagReservedAndDistinct) {
+    using safety_crit::shared_memory::WorkerStatusFlag;
+    constexpr std::uint64_t degraded = safety_crit::shared_memory::to_bits(WorkerStatusFlag::kDegraded);
+    SAFETY_CRIT_ASSERT(degraded == (1ULL << 5));
+    SAFETY_CRIT_ASSERT((degraded & safety_crit::shared_memory::to_bits(WorkerStatusFlag::kRunning)) == 0u);
+    SAFETY_CRIT_ASSERT((degraded & safety_crit::shared_memory::to_bits(WorkerStatusFlag::kIdle)) == 0u);
+    SAFETY_CRIT_ASSERT((degraded & safety_crit::shared_memory::to_bits(WorkerStatusFlag::kCrashed)) == 0u);
+    SAFETY_CRIT_ASSERT((degraded & safety_crit::shared_memory::to_bits(WorkerStatusFlag::kRecovering)) == 0u);
+    SAFETY_CRIT_ASSERT((degraded & safety_crit::shared_memory::to_bits(WorkerStatusFlag::kOverrun)) == 0u);
+    SAFETY_CRIT_ASSERT(safety_crit::shared_memory::has_flag(degraded, WorkerStatusFlag::kDegraded));
+}
+
+SAFETY_CRIT_TEST_CASE(Supervisor, PromotesStandbyOnPhysicalBCrash) {
+    const std::string region_name = "/sc_t0026b_" + std::to_string(static_cast<long>(::getpid()));
+    const auto pid_dir = std::filesystem::temp_directory_path() /
+                         ("sc_t0026b_pid_" + std::to_string(static_cast<long>(::getpid())));
+    (void)safety_crit::shared_memory::SharedRegionHandle::destroy(region_name.c_str());
+
+    int fds[2] = {-1, -1};
+    SAFETY_CRIT_ASSERT(::pipe(fds) == 0);
+    const pid_t supervisor = ::fork();
+    SAFETY_CRIT_ASSERT(supervisor >= 0);
+    if (supervisor == 0) {
+        ::dup2(fds[1], STDOUT_FILENO);
+        ::close(fds[0]);
+        ::close(fds[1]);
+        safety_crit::supervisor::SupervisorConfig config;
+        config.region_name = region_name.c_str();
+        config.pid_dir = pid_dir;
+        config.worker_ticks = 100000;
+        config.runtime_ms = 700;
+        ::_exit(safety_crit::supervisor::run_supervisor(config));
+    }
+    ::close(fds[1]);
+
+    const long worker = worker_pid(pid_dir, "safety_crit_worker_1.pid",
+                                   std::chrono::milliseconds(1500));
+    SAFETY_CRIT_ASSERT(worker > 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    SAFETY_CRIT_ASSERT(::kill(static_cast<pid_t>(worker), SIGKILL) == 0);
+
+    int status = 0;
+    SAFETY_CRIT_ASSERT(::waitpid(supervisor, &status, 0) == supervisor);
+    SAFETY_CRIT_ASSERT(WIFEXITED(status));
+    SAFETY_CRIT_ASSERT(WEXITSTATUS(status) == 0);  // single crash: recoverable, not degraded
+    drain_pipe(fds[0]);
+    ::close(fds[0]);
+
+    auto region = safety_crit::shared_memory::SharedRegionHandle::create_or_open(
+        region_name.c_str());
+    SAFETY_CRIT_ASSERT(region.ok());
+    safety_crit::shared_memory::OwnershipToken ownership;
+    SAFETY_CRIT_ASSERT(safety_crit::shared_memory::read_ownership(*region.get(), 1u, ownership));
+    SAFETY_CRIT_ASSERT(ownership.physical_owner == 2u);  // C promotes to logical ring B
+    SAFETY_CRIT_ASSERT(!safety_crit::shared_memory::load_has_flag(
+        region.get()->worker_status[1].status,
+        safety_crit::shared_memory::WorkerStatusFlag::kDegraded));
+    region.detach();
+    std::error_code ec;
+    std::filesystem::remove_all(pid_dir, ec);
+    (void)safety_crit::shared_memory::SharedRegionHandle::destroy(region_name.c_str());
+}
+
+SAFETY_CRIT_TEST_CASE(Supervisor, DegradesSecondRingOnSimultaneousCrash) {
+    const std::string region_name = "/sc_t0026d_" + std::to_string(static_cast<long>(::getpid()));
+    const auto pid_dir = std::filesystem::temp_directory_path() /
+                         ("sc_t0026d_pid_" + std::to_string(static_cast<long>(::getpid())));
+    (void)safety_crit::shared_memory::SharedRegionHandle::destroy(region_name.c_str());
+
+    int fds[2] = {-1, -1};
+    SAFETY_CRIT_ASSERT(::pipe(fds) == 0);
+    const pid_t supervisor = ::fork();
+    SAFETY_CRIT_ASSERT(supervisor >= 0);
+    if (supervisor == 0) {
+        ::dup2(fds[1], STDOUT_FILENO);
+        ::close(fds[0]);
+        ::close(fds[1]);
+        safety_crit::supervisor::SupervisorConfig config;
+        config.region_name = region_name.c_str();
+        config.pid_dir = pid_dir;
+        config.worker_ticks = 100000;
+        config.runtime_ms = 700;
+        ::_exit(safety_crit::supervisor::run_supervisor(config));
+    }
+    ::close(fds[1]);
+
+    const long hot_a = worker_pid(pid_dir, "safety_crit_worker_0.pid",
+                                  std::chrono::milliseconds(1500));
+    const long hot_b = worker_pid(pid_dir, "safety_crit_worker_1.pid",
+                                  std::chrono::milliseconds(1500));
+    SAFETY_CRIT_ASSERT(hot_a > 0);
+    SAFETY_CRIT_ASSERT(hot_b > 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    // Double fault: no gap for the supervisor to react between the crashes.
+    SAFETY_CRIT_ASSERT(::kill(static_cast<pid_t>(hot_a), SIGKILL) == 0);
+    SAFETY_CRIT_ASSERT(::kill(static_cast<pid_t>(hot_b), SIGKILL) == 0);
+
+    // While degraded, both replacement physical processes run as standby.
+    bool replacements_live = false;
+    const auto deadline = clock_type::now() + std::chrono::milliseconds(600);
+    while (clock_type::now() < deadline) {
+        const long replacement_a = worker_pid(pid_dir, "safety_crit_worker_0.pid",
+                                              std::chrono::milliseconds(50));
+        const long replacement_b = worker_pid(pid_dir, "safety_crit_worker_1.pid",
+                                              std::chrono::milliseconds(50));
+        if (replacement_a > 0 && replacement_a != hot_a && replacement_b > 0 &&
+            replacement_b != hot_b && ::kill(static_cast<pid_t>(replacement_a), 0) == 0 &&
+            ::kill(static_cast<pid_t>(replacement_b), 0) == 0) {
+            replacements_live = true;
+            break;
+        }
+    }
+    SAFETY_CRIT_ASSERT(replacements_live);
+
+    // DEGRADED is asserted while the supervisor lives: it re-asserts the
+    // status bit each loop, so a standby restart cannot erase it.
+    bool degraded_bit_visible = false;
+    {
+        auto live = safety_crit::shared_memory::SharedRegionHandle::create_or_open(
+            region_name.c_str());
+        SAFETY_CRIT_ASSERT(live.ok());
+        const auto bit_deadline = clock_type::now() + std::chrono::milliseconds(300);
+        while (clock_type::now() < bit_deadline && !degraded_bit_visible) {
+            degraded_bit_visible = safety_crit::shared_memory::load_has_flag(
+                live.get()->worker_status[1].status,
+                safety_crit::shared_memory::WorkerStatusFlag::kDegraded);
+            if (!degraded_bit_visible) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+        }
+        live.detach();
+    }
+    SAFETY_CRIT_ASSERT(degraded_bit_visible);
+
+    int status = 0;
+    SAFETY_CRIT_ASSERT(::waitpid(supervisor, &status, 0) == supervisor);
+    SAFETY_CRIT_ASSERT(WIFEXITED(status));
+    SAFETY_CRIT_ASSERT(WEXITSTATUS(status) == 4);  // DEGRADED shutdown
+    std::string output = drain_pipe(fds[0]);
+    ::close(fds[0]);
+
+    // Exactly one stdout degradation event for logical ring 1.
+    std::size_t degraded_events = 0;
+    std::size_t pos = 0;
+    while ((pos = output.find("supervisor: logical ring 1 degraded (reason=", pos)) !=
+           std::string::npos) {
+        ++degraded_events;
+        ++pos;
+    }
+    SAFETY_CRIT_ASSERT(degraded_events == 1u);
+    SAFETY_CRIT_ASSERT(output.find("logical ring 0 degraded") == std::string::npos);
+
+    auto region = safety_crit::shared_memory::SharedRegionHandle::create_or_open(
+        region_name.c_str());
+    SAFETY_CRIT_ASSERT(region.ok());
+    safety_crit::shared_memory::OwnershipToken ownership;
+    // Deterministic tie-break: C promotes the lowest logical-ring index...
+    SAFETY_CRIT_ASSERT(safety_crit::shared_memory::read_ownership(*region.get(), 0u, ownership));
+    SAFETY_CRIT_ASSERT(ownership.physical_owner == 2u);
+    // ...and the other ring keeps its dead owner (DEGRADED bit asserted
+    // above, during the supervisor's lifetime).
+    SAFETY_CRIT_ASSERT(safety_crit::shared_memory::read_ownership(*region.get(), 1u, ownership));
+    SAFETY_CRIT_ASSERT(ownership.physical_owner == 1u);
+    region.detach();
+    std::error_code ec;
+    std::filesystem::remove_all(pid_dir, ec);
+    (void)safety_crit::shared_memory::SharedRegionHandle::destroy(region_name.c_str());
+}
+
+SAFETY_CRIT_TEST_CASE(Supervisor, CrashRecoveryIdempotentForRepeatingKill) {
+    const std::string region_name = "/sc_t0026i_" + std::to_string(static_cast<long>(::getpid()));
+    const auto pid_dir = std::filesystem::temp_directory_path() /
+                         ("sc_t0026i_pid_" + std::to_string(static_cast<long>(::getpid())));
+    (void)safety_crit::shared_memory::SharedRegionHandle::destroy(region_name.c_str());
+
+    const pid_t supervisor = ::fork();
+    SAFETY_CRIT_ASSERT(supervisor >= 0);
+    if (supervisor == 0) {
+        safety_crit::supervisor::SupervisorConfig config;
+        config.region_name = region_name.c_str();
+        config.pid_dir = pid_dir;
+        config.worker_ticks = 100000;
+        config.runtime_ms = 700;
+        ::_exit(safety_crit::supervisor::run_supervisor(config));
+    }
+
+    const long hot_a = worker_pid(pid_dir, "safety_crit_worker_0.pid",
+                                  std::chrono::milliseconds(1500));
+    SAFETY_CRIT_ASSERT(hot_a > 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    // A second SIGKILL on an already-crashed (handled) worker must not
+    // trigger a second promotion or drive the supervisor into failsafe.
+    SAFETY_CRIT_ASSERT(::kill(static_cast<pid_t>(hot_a), SIGKILL) == 0);
+    (void)::kill(static_cast<pid_t>(hot_a), SIGKILL);
+
+    int status = 0;
+    SAFETY_CRIT_ASSERT(::waitpid(supervisor, &status, 0) == supervisor);
+    SAFETY_CRIT_ASSERT(WIFEXITED(status));
+    SAFETY_CRIT_ASSERT(WEXITSTATUS(status) == 0);
+
     auto region = safety_crit::shared_memory::SharedRegionHandle::create_or_open(
         region_name.c_str());
     SAFETY_CRIT_ASSERT(region.ok());

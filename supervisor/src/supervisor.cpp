@@ -155,45 +155,77 @@ Child* find_worker(std::vector<Child>& children, std::uint32_t physical_worker) 
     return nullptr;
 }
 
+// Topology constant (DEC-0011 #2): physical C is the only standby.
+constexpr std::uint32_t kStandbyPhysical = 2u;
+
+// T-0026 (DEC-0012 #4): crash recovery for ANY physical worker. A crash of
+// the owner of a logical ring promotes the standby physical process unless
+// the standby already owns a ring (double fault): the ring is then marked
+// DEGRADED in its owner's worker_status cell (terminal for that ring) and
+// announced exactly once. The crashed physical process always restarts as
+// standby.
 bool recover_worker_crash(shared_memory::SharedRegion& region,
                           std::vector<Child>& children,
                           std::uint32_t physical_worker,
                           const char* region_name, const char* pid_dir,
-                          std::uint32_t& next_generation) {
-    if (physical_worker != 0u) {
-        return false;
-    }
+                          std::uint32_t& next_generation,
+                          std::array<bool, shared_memory::kMaxWorkers>& degraded_rings) {
     Child* crashed = find_worker(children, physical_worker);
     if (crashed == nullptr) {
         return true;
     }
     crashed->handled = true;
 
-    shared_memory::OwnershipToken expected;
-    if (!shared_memory::read_ownership(region, 0u, expected) ||
-        expected.physical_owner != physical_worker ||
-        !shared_memory::verify_worker_ring(region, 0u)) {
-        return false;
+    const auto owned = monitors::owned_logical_ring(region, physical_worker);
+    if (owned.has_value()) {
+        const std::size_t logical = *owned;
+        shared_memory::OwnershipToken expected;
+        if (!shared_memory::read_ownership(region, logical, expected) ||
+            expected.physical_owner != physical_worker ||
+            !shared_memory::verify_worker_ring(region, logical)) {
+            return false;
+        }
+        Child* standby = find_worker(children, kStandbyPhysical);
+        // Region initialization hands every ring to its home physical, so
+        // "busy" means the standby owns a ring that is NOT its own home
+        // index, i.e. it has already been promoted to a hot logical ring.
+        const auto owned_by_standby =
+            monitors::owned_logical_ring(region, kStandbyPhysical);
+        const bool standby_busy =
+            owned_by_standby.has_value() && *owned_by_standby != kStandbyPhysical;
+        if (standby != nullptr && standby->pid > 0 && !standby_busy) {
+            shared_memory::OwnershipToken replacement_token;
+            if (!shared_memory::transfer_ownership(region, logical, expected,
+                                                    kStandbyPhysical, 1u,
+                                                    replacement_token)) {
+                return false;
+            }
+        } else if (!degraded_rings[physical_worker]) {
+            // No promotable standby: DEGRADED is terminal for this ring
+            // within this supervisor lifetime; announce exactly once and
+            // keep re-asserting the bit (the status word belongs to the
+            // physical process and a standby restart stores over it).
+            shared_memory::set_flag(region.worker_status[physical_worker].status,
+                                    shared_memory::WorkerStatusFlag::kDegraded);
+            std::printf("supervisor: logical ring %zu degraded (reason=standby_exhausted)\n",
+                        logical);
+            std::fflush(stdout);
+            degraded_rings[physical_worker] = true;
+        }
     }
 
     const std::uint32_t replacement_generation = ++next_generation;
-    shared_memory::OwnershipToken replacement;
-    if (!shared_memory::transfer_ownership(region, 0u, expected, 2u, 1u,
-                                            replacement)) {
-        return false;
-    }
-
-    workers::WorkerConfig replacement_a{};
-    replacement_a.worker_idx = 0u;
-    replacement_a.logical_ring = shared_memory::kUnassignedPhysicalOwner;
-    replacement_a.process_generation = replacement_generation;
-    replacement_a.role = workers::WorkerRole::kStandby;
-    replacement_a.ticks = 1000u;
-    const pid_t replacement_pid = launch_worker(replacement_a, region_name, pid_dir);
+    workers::WorkerConfig replacement{};
+    replacement.worker_idx = physical_worker;
+    replacement.logical_ring = shared_memory::kUnassignedPhysicalOwner;
+    replacement.process_generation = replacement_generation;
+    replacement.role = workers::WorkerRole::kStandby;
+    replacement.ticks = 1000u;
+    const pid_t replacement_pid = launch_worker(replacement, region_name, pid_dir);
     if (replacement_pid < 0) {
         return false;
     }
-    children.push_back({replacement_pid, 0u, true, false});
+    children.push_back({replacement_pid, physical_worker, true, false});
     return true;
 }
 
@@ -201,7 +233,8 @@ bool reap_crashed_workers(shared_memory::SharedRegion& region,
                           std::vector<Child>& children,
                           const char* region_name, const char* pid_dir,
                           std::uint32_t& next_generation,
-                          std::chrono::steady_clock::time_point* crash_observed) {
+                          std::chrono::steady_clock::time_point* crash_observed,
+                          std::array<bool, shared_memory::kMaxWorkers>& degraded_rings) {
     for (std::size_t index = 0; index < children.size(); ++index) {
         Child& child = children[index];
         if (!child.worker || child.pid <= 0 || child.handled) {
@@ -217,7 +250,8 @@ bool reap_crashed_workers(shared_memory::SharedRegion& region,
                 *crash_observed = std::chrono::steady_clock::now();
             }
             if (!recover_worker_crash(region, children, child.physical_worker,
-                                       region_name, pid_dir, next_generation)) {
+                                       region_name, pid_dir, next_generation,
+                                       degraded_rings)) {
                 return false;
             }
         } else {
@@ -418,14 +452,25 @@ int run_supervisor(const SupervisorConfig& config) {
     state = SupervisorState::kRunning;
     bool recovery_failed = false;
     StallRecoveryTracker stall_tracker{std::chrono::milliseconds(config.stall_grace_ms)};
+    std::array<bool, shared_memory::kMaxWorkers> degraded_rings{};
     while (!g_stop && !recovery_failed && std::chrono::steady_clock::now() < deadline) {
         const bool failover_previously_detected = failover_detected.time_since_epoch().count() != 0;
         if (!reap_crashed_workers(*region.get(), children, config.region_name,
                                   config.pid_dir.c_str(), next_generation,
-                                  &failover_detected)) {
+                                  &failover_detected, degraded_rings)) {
             state = SupervisorState::kFailsafe;
             recovery_failed = true;
             break;
+        }
+        // Management-plane authority (T-0026): the supervisor re-asserts the
+        // DEGRADED bit of every degraded ring each loop, so a standby
+        // restart storing its own status word cannot silently erase it.
+        for (std::size_t ring = 0; ring < shared_memory::kMaxWorkers; ++ring) {
+            if (degraded_rings[ring]) {
+                shared_memory::set_flag(region.get()->worker_status[ring].status,
+                                        shared_memory::WorkerStatusFlag::kDegraded);
+                state = SupervisorState::kDegraded;
+            }
         }
         if (!drain_output_witness(*region.get(), 0u, output_witness_a) ||
             !drain_output_witness(*region.get(), 1u, output_witness_b)) {
@@ -479,7 +524,9 @@ int run_supervisor(const SupervisorConfig& config) {
             const StallRecoveryEvent event = stall_tracker.observe(
                 physical_worker, tail, std::chrono::steady_clock::now());
             if (event.outcome == StallRecoveryOutcome::kRecovered) {
-                state = SupervisorState::kRunning;
+                if (state != SupervisorState::kDegraded) {
+                    state = SupervisorState::kRunning;
+                }
                 std::printf("supervisor: stall recovered for physical %u at epoch %llu\n",
                             event.physical_worker,
                             static_cast<unsigned long long>(event.epoch));
@@ -516,7 +563,12 @@ int run_supervisor(const SupervisorConfig& config) {
                 last_line = line;
                 if (parsed.kind == MonitorLineKind::kAlert &&
                     parsed.event == "worker_crashed") {
-                    state = SupervisorState::kFailoverDetected;
+                    // DEGRADED is sticky for the supervisor lifetime (the
+                    // degraded ring is terminal); a crash alert must not
+                    // mask it.
+                    if (state != SupervisorState::kDegraded) {
+                        state = SupervisorState::kFailoverDetected;
+                    }
                     // Records snapshot lives with reap_crashed_workers (the
                     // actual failover trigger), not here, so drain position
                     // and ownership transfer stay consistent.

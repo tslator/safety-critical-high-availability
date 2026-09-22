@@ -15,6 +15,11 @@ enum class WorkerStatusFlag : std::uint64_t {
     // the last clear. Semantics addition only -- the status word layout is
     // unchanged.
     kOverrun = 1ULL << 4,
+    // T-0026 (DEC-0012 #4): a logical ring whose owner crashed with no
+    // promotable standby left; terminal within the supervisor lifetime.
+    // Semantics addition only -- the status word layout is unchanged and
+    // kRegionVersion stays 4.
+    kDegraded = 1ULL << 5,
 };
 
 inline constexpr std::uint64_t to_bits(WorkerStatusFlag flag) {
