@@ -451,4 +451,4 @@ New: `owned_logical_ring(const SharedRegion&, std::size_t physical_idx)` helper 
 |Compose `up --wait` healthy + `containers/compose/failover-smoke.sh`|PASS 5 consecutive runs|
 |`scripts/phase4-failover-timing.sh 5` (regression check on supervisor drain timing)|PASS min/median/max/avg 85 ms, 0/5 over `<100 ms` SLA|
 |`./scripts/sync-agent-guidance.sh --check`|PASS adapters byte-identical|
-|Hosted CI|PASS — see [T-0023 task record](docs/tasks/T-0023-monitor-logical-ring-attribution.md) for the run link|
+|Hosted CI|PASS - run 35761919434 on commit c14934c (2026-09-22): all ten jobs succeeded|

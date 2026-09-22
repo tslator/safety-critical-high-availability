@@ -34,13 +34,11 @@
 
 ## Next Work
 
-1. T-0023: monitor logical-ring attribution (Phase 4 tail fix, P0 blocker for
-   stall and double-fault scenarios).
-2. T-0024: abandoned producer claim rule (Phase 4 tail fix, P0 blocker for
+1. T-0024: abandoned producer claim rule (Phase 4 tail fix, P0 blocker for
    memory-corruption scenarios).
-3. Then T-0025 → T-0026 → T-0027 → T-0028 → T-0029 → T-0030 → T-0031 in
+2. Then T-0025 → T-0026 → T-0027 → T-0028 → T-0029 → T-0030 → T-0031 in
    dependency order.
-4. Optional tooling follow-ups from DEC-0008: `clang-static-analysis`
+3. Optional tooling follow-ups from DEC-0008: `clang-static-analysis`
    (advisory) and `clang-sanitizers` presets.
 
 ## Documentation Map

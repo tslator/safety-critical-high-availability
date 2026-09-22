@@ -45,4 +45,4 @@ here or in `NOTES.md`.
 - `scripts/phase4-failover-timing.sh 5` unchanged: min/median/max/avg 85 ms,
   0/5 iterations over `<100 ms` SLA.
 - `./scripts/sync-agent-guidance.sh --check` PASS.
-- Hosted CI run link: recorded below once CI completes.
+- Hosted CI: [run 35761919434](https://github.com/tslator/safety-critical-high-availability/actions/runs/35761919434) on commit `c14934c` (2026-09-22), all ten jobs green.
