@@ -31,6 +31,15 @@ sequential `T-####`; phase-scoped labels such as `T1.3` are aliases. See
 | [T-0020](T-0020-scheduling-priority.md) | Phase 4 | Scheduling priority policy | AI agent (opencode) | Complete | Medium | T-0017 | [DEC-0011](../decisions/0011-phase4-supervisor-failover.md) |
 | [T-0021](T-0021-compose-runtime-integration.md) | Phase 4 | Compose runtime integration | AI agent (opencode) | Complete | High | T-0017, T-0018 | [DEC-0011](../decisions/0011-phase4-supervisor-failover.md) |
 | [T-0022](T-0022-phase4-integration-exit.md) | Phase 4 | Integration, evidence, and phase exit | AI agent (opencode) | Complete | High | T-0018, T-0019, T-0020, T-0021 | [DEC-0011](../decisions/0011-phase4-supervisor-failover.md) |
+| [T-0023](T-0023-monitor-logical-ring-attribution.md) | Phase 5 | Monitor logical-ring attribution (Phase 4 tail) | Unassigned | Planned | High | Phase 4 exit | [DEC-0012](../decisions/0012-phase5-perturbation-engine.md) |
+| [T-0024](T-0024-abandoned-claim-rule.md) | Phase 5 | Abandoned producer claim rule (Phase 4 tail) | Unassigned | Planned | High | Phase 4 exit | [DEC-0012](../decisions/0012-phase5-perturbation-engine.md) |
+| [T-0025](T-0025-supervisor-stall-recovery.md) | Phase 5 | Supervisor stall recovery | Unassigned | Planned | High | T-0023 | [DEC-0012](../decisions/0012-phase5-perturbation-engine.md) |
+| [T-0026](T-0026-supervisor-double-fault-degraded.md) | Phase 5 | Supervisor double-fault and DEGRADED state | Unassigned | Planned | High | T-0023, T-0024, T-0025 | [DEC-0012](../decisions/0012-phase5-perturbation-engine.md) |
+| [T-0027](T-0027-worker-corruption-hook.md) | Phase 5 | Worker SIGUSR2 memory-corruption hook | Unassigned | Planned | High | Phase 4 exit | [DEC-0012](../decisions/0012-phase5-perturbation-engine.md) |
+| [T-0028](T-0028-perturb-harness-cli.md) | Phase 5 | Perturbation harness library and CLI | Unassigned | Planned | High | T-0023, T-0024, T-0025, T-0026, T-0027 | [DEC-0012](../decisions/0012-phase5-perturbation-engine.md) |
+| [T-0029](T-0029-compose-perturb-scenarios.md) | Phase 5 | Compose perturb service and scenario scripts | Unassigned | Planned | High | T-0028 | [DEC-0012](../decisions/0012-phase5-perturbation-engine.md) |
+| [T-0030](T-0030-replay-log-deterministic-scenario.md) | Phase 5 | Replay log and deterministic S1 scenario | Unassigned | Planned | Medium | T-0028, T-0029 | [DEC-0012](../decisions/0012-phase5-perturbation-engine.md) |
+| [T-0031](T-0031-phase5-integration-exit.md) | Phase 5 | Integration, evidence, and phase exit | Unassigned | Planned | High | T-0023, T-0024, T-0025, T-0026, T-0027, T-0028, T-0029, T-0030 | [DEC-0012](../decisions/0012-phase5-perturbation-engine.md) |
 | T1.1 | Phase 1 | Shared region layout and atomic flags _(roll-up)_ | — | Complete | — | — | [Phase 1 plan](../phases/PHASE_1_SHARED_MEMORY.md) |
 | T1.2 | Phase 1 | Lock-free ring buffer _(roll-up)_ | — | Complete | — | — | [Phase 1 plan](../phases/PHASE_1_SHARED_MEMORY.md), [evidence](../evidence/phase-1.md) |
 | Phase 0 | Phase 0 | Container and tooling (0.1–0.6) _(roll-up)_ | — | Complete | — | — | [Phase 0 plan](../phases/PHASE_0_CONTAINER_AND_TOOLING.md) |
