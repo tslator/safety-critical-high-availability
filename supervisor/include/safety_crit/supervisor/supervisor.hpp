@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <limits>
@@ -46,16 +48,72 @@ struct SupervisorConfig {
     // a long-lived Compose service). Tests set an explicit bounded budget.
     std::uint64_t worker_ticks{std::numeric_limits<std::uint64_t>::max()};
     std::uint64_t runtime_ms{0};  // zero means run until SIGTERM or child exit
+    // T-0025 (DEC-0012 #3): grace between the bounded SIGCONT and SIGKILL
+    // escalation for a stalled ring, exposed via --stall-grace-ms.
+    std::uint64_t stall_grace_ms{200};
 };
 
 enum class SupervisorState : std::uint8_t {
     kIdle,
     kLaunching,
     kRunning,
+    kStalledRecovering,
     kFailoverDetected,
     kRecovering,
     kDegraded,
     kFailsafe,
+};
+
+// T-0025 (DEC-0012 #3): per-logical-ring stall recovery state machine. On a
+// worker_stalled alert the supervisor issues exactly one bounded SIGCONT
+// (begin() returning true) and then watches the ring tail each loop
+// (observe()): tail change means recovered, grace expiry means escalate to
+// SIGKILL through the existing crash-recovery path. A second alert on an
+// already-recovering ring is a no-op and never resets the grace timer.
+// Outside the ring hot path; time is injected so unit tests are
+// deterministic.
+enum class StallRecoveryOutcome : std::uint8_t {
+    kNone,
+    kRecovered,
+    kEscalate,
+};
+
+struct StallRecoveryEvent {
+    StallRecoveryOutcome outcome{StallRecoveryOutcome::kNone};
+    std::uint32_t physical_worker{0};
+    std::uint64_t epoch{0};
+};
+
+class StallRecoveryTracker {
+public:
+    using time_point = std::chrono::steady_clock::time_point;
+
+    explicit StallRecoveryTracker(std::chrono::milliseconds grace_period);
+
+    // Starts recovery for one physical worker. Returns true when recovery
+    // begins (the caller must send one SIGCONT); false is a no-op because a
+    // stall episode for this worker is already in flight.
+    bool begin(std::uint32_t physical_worker, std::uint64_t epoch, std::uint64_t tail,
+               time_point now);
+
+    // One loop observation of the ring tail. kRecovered and kEscalate are
+    // terminal: they clear the slot and re-arm the ring for a future
+    // episode.
+    StallRecoveryEvent observe(std::uint32_t physical_worker, std::uint64_t tail,
+                               time_point now);
+
+    bool recovering(std::uint32_t physical_worker) const;
+
+private:
+    struct Slot {
+        bool active{false};
+        std::uint64_t epoch{0};
+        std::uint64_t baseline_tail{0};
+        time_point started_at{};
+    };
+
+    std::chrono::milliseconds grace_period_{0};
+    std::array<Slot, shared_memory::kMaxWorkers> slots_{};
 };
 
 // Creates/verifies shared memory, launches monitor plus A/B hot and C standby,

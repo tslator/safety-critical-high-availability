@@ -20,6 +20,7 @@
 #include <string_view>
 #include <vector>
 
+#include "safety_crit/monitors/health.hpp"
 #include "safety_crit/monitors/monitor_config.hpp"
 #include "safety_crit/monitors/monitor_entry.hpp"
 #include "safety_crit/shared_memory/shm_attach.hpp"
@@ -226,6 +227,21 @@ bool reap_crashed_workers(shared_memory::SharedRegion& region,
     return true;
 }
 
+// T-0025: tail and epoch of the logical ring a physical worker owns
+// (T-0023 attribution), for the stall recovery tracker.
+bool owned_ring_state(shared_memory::SharedRegion& region, std::uint32_t physical_worker,
+                      std::uint64_t& tail, std::uint64_t& epoch) {
+    const auto owned = monitors::owned_logical_ring(region, physical_worker);
+    const std::size_t logical = owned.value_or(physical_worker);
+    shared_memory::OwnershipToken token;
+    if (!shared_memory::read_ownership(region, logical, token)) {
+        return false;
+    }
+    epoch = token.epoch;
+    tail = region.rings[logical].tail_.load(std::memory_order_acquire);
+    return true;
+}
+
 }  // namespace
 
 bool parse_monitor_line(std::string_view line, MonitorLine& out) {
@@ -258,6 +274,54 @@ bool drain_output_witness(shared_memory::SharedRegion& region, std::size_t logic
     witness.corruptions += corruption_after - corruption_before;
     witness.last_epoch = ownership.epoch;
     return corruption_after == corruption_before;
+}
+
+StallRecoveryTracker::StallRecoveryTracker(std::chrono::milliseconds grace_period)
+    : grace_period_(grace_period) {}
+
+bool StallRecoveryTracker::begin(std::uint32_t physical_worker, std::uint64_t epoch,
+                                 std::uint64_t tail, time_point now) {
+    if (physical_worker >= slots_.size()) {
+        return false;
+    }
+    Slot& slot = slots_[physical_worker];
+    if (slot.active) {
+        return false;  // idempotent per epoch: grace timer is not reset
+    }
+    slot.active = true;
+    slot.epoch = epoch;
+    slot.baseline_tail = tail;
+    slot.started_at = now;
+    return true;
+}
+
+StallRecoveryEvent StallRecoveryTracker::observe(std::uint32_t physical_worker,
+                                                 std::uint64_t tail, time_point now) {
+    StallRecoveryEvent event;
+    if (physical_worker >= slots_.size()) {
+        return event;
+    }
+    Slot& slot = slots_[physical_worker];
+    if (!slot.active) {
+        return event;
+    }
+    event.physical_worker = physical_worker;
+    event.epoch = slot.epoch;
+    if (tail != slot.baseline_tail) {
+        slot.active = false;  // ring moved: the SIGCONT worked
+        event.outcome = StallRecoveryOutcome::kRecovered;
+    } else if (now - slot.started_at > grace_period_) {
+        slot.active = false;  // grace expired: caller escalates to SIGKILL
+        event.outcome = StallRecoveryOutcome::kEscalate;
+    }
+    return event;
+}
+
+bool StallRecoveryTracker::recovering(std::uint32_t physical_worker) const {
+    if (physical_worker >= slots_.size()) {
+        return false;
+    }
+    return slots_[physical_worker].active;
 }
 
 int run_supervisor(const SupervisorConfig& config) {
@@ -353,6 +417,7 @@ int run_supervisor(const SupervisorConfig& config) {
     char buffer[512];
     state = SupervisorState::kRunning;
     bool recovery_failed = false;
+    StallRecoveryTracker stall_tracker{std::chrono::milliseconds(config.stall_grace_ms)};
     while (!g_stop && !recovery_failed && std::chrono::steady_clock::now() < deadline) {
         const bool failover_previously_detected = failover_detected.time_since_epoch().count() != 0;
         if (!reap_crashed_workers(*region.get(), children, config.region_name,
@@ -397,6 +462,40 @@ int run_supervisor(const SupervisorConfig& config) {
             }
             output_witness_a.first_post_failover = true;
         }
+        // T-0025 (DEC-0012 #3): bounded stall recovery. One SIGCONT was
+        // issued when the alert arrived; every loop either sees the ring
+        // tail move (recovered) or the grace expire (escalate to SIGKILL;
+        // the next reap iteration runs the existing crash-recovery path).
+        for (std::size_t physical = 0; physical < shared_memory::kMaxWorkers; ++physical) {
+            const auto physical_worker = static_cast<std::uint32_t>(physical);
+            if (!stall_tracker.recovering(physical_worker)) {
+                continue;
+            }
+            std::uint64_t tail = 0;
+            std::uint64_t epoch = 0;
+            if (!owned_ring_state(*region.get(), physical_worker, tail, epoch)) {
+                continue;
+            }
+            const StallRecoveryEvent event = stall_tracker.observe(
+                physical_worker, tail, std::chrono::steady_clock::now());
+            if (event.outcome == StallRecoveryOutcome::kRecovered) {
+                state = SupervisorState::kRunning;
+                std::printf("supervisor: stall recovered for physical %u at epoch %llu\n",
+                            event.physical_worker,
+                            static_cast<unsigned long long>(event.epoch));
+                std::fflush(stdout);
+            } else if (event.outcome == StallRecoveryOutcome::kEscalate) {
+                std::printf("supervisor: stall escalation for physical %u at epoch %llu\n",
+                            event.physical_worker,
+                            static_cast<unsigned long long>(event.epoch));
+                std::fflush(stdout);
+                Child* stalled = find_worker(children, physical_worker);
+                if (stalled != nullptr && stalled->pid > 0) {
+                    (void)::kill(stalled->pid, SIGKILL);
+                }
+                state = SupervisorState::kFailoverDetected;
+            }
+        }
         struct pollfd descriptor{pipe_fds[0], POLLIN | POLLHUP, 0};
         const int ready = ::poll(&descriptor, 1, 10);
         if (ready > 0 && (descriptor.revents & (POLLIN | POLLHUP)) != 0) {
@@ -421,6 +520,22 @@ int run_supervisor(const SupervisorConfig& config) {
                     // Records snapshot lives with reap_crashed_workers (the
                     // actual failover trigger), not here, so drain position
                     // and ownership transfer stay consistent.
+                }
+                if (parsed.kind == MonitorLineKind::kAlert &&
+                    parsed.event == "worker_stalled" &&
+                    (state == SupervisorState::kRunning ||
+                     state == SupervisorState::kStalledRecovering)) {
+                    std::uint64_t tail = 0;
+                    std::uint64_t epoch = 0;
+                    if (owned_ring_state(*region.get(), parsed.worker, tail, epoch) &&
+                        stall_tracker.begin(parsed.worker, epoch, tail,
+                                            std::chrono::steady_clock::now())) {
+                        Child* stalled = find_worker(children, parsed.worker);
+                        if (stalled != nullptr && stalled->pid > 0) {
+                            (void)::kill(stalled->pid, SIGCONT);
+                        }
+                        state = SupervisorState::kStalledRecovering;
+                    }
                 }
                 std::fwrite(line.data(), 1, line.size(), stdout);
                 std::fputc('\n', stdout);

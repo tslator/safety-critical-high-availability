@@ -29,7 +29,8 @@ void print_usage(std::ostream& out) {
         << "           [--stall-threshold-ms MS] [--region NAME]\n"
         << "           [--pid-dir DIR] [--polls N]\n"
         << "       safety-critical-ha supervisor [--runtime-ms MS]\n"
-        << "           [--region NAME] [--pid-dir DIR] [--ticks N]\n";
+        << "           [--stall-grace-ms MS] [--region NAME] [--pid-dir DIR]\n"
+        << "           [--ticks N]\n";
 }
 
 bool parse_u64(std::string_view text, std::uint64_t& out) {
@@ -242,6 +243,12 @@ int run_supervisor_command(int argc, char* argv[]) {
                 return 2;
             }
             cfg.runtime_ms = parsed;
+        } else if (arg == "--stall-grace-ms") {
+            if (!parse_u64(value, parsed) || parsed > 3600000u) {
+                std::cerr << "supervisor: --stall-grace-ms requires an integer (0..3600000)\n";
+                return 2;
+            }
+            cfg.stall_grace_ms = parsed;
         } else if (arg == "--ticks") {
             if (!parse_u64(value, parsed) || parsed == 0) {
                 return 2;

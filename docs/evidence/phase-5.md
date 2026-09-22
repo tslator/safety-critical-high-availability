@@ -75,3 +75,41 @@ here or in `NOTES.md`.
   0/5 iterations over `<100 ms` SLA (Phase 4 baseline preserved).
 - `./scripts/sync-agent-guidance.sh --check` PASS.
 - Hosted CI: [run 35768199979](https://github.com/tslator/safety-critical-high-availability/actions/runs/35768199979) on commit `97ac5f5` (2026-09-22), all ten jobs green.
+
+## T-0025 Result
+
+- Implementation: `StallRecoveryTracker` (per-logical-ring state machine with
+  injected time) plus `StallRecoveryOutcome`/`StallRecoveryEvent` in
+  `supervisor/include/safety_crit/supervisor/supervisor.hpp`; tracker body
+  and `owned_ring_state()` (T-0023 attribution: tail read from the logical
+  ring the physical worker owns) in `supervisor/src/supervisor.cpp`.
+  `SupervisorState::kStalledRecovering` added between `kRunning` and
+  `kFailoverDetected`.
+- Behavior: `worker_stalled` alert → exactly one bounded SIGCONT +
+  `kStalledRecovering`; ring-tail change → `kRunning` +
+  `supervisor: stall recovered for physical N at epoch E`; grace expiry
+  (default 200 ms, `--stall-grace-ms` CLI flag) →
+  `supervisor: stall escalation for physical N at epoch E` + SIGKILL, after
+  which the existing reap-based crash-recovery path runs. Second alert on an
+  already-recovering ring is a no-op and never resets the grace timer.
+- TDD red step: six new tests written first and observed failing to compile
+  / fail against the pre-fix supervisor; all PASS after implementation.
+  Unit: `StallRecoveryRecoversOnTailAdvance`,
+  `StallRecoveryEscalatesAfterGracePeriod` (strict `>` boundary),
+  `StallRecoveryIdempotentPerEpoch`, `StallRecoveryGracePeriodIsConfigurable`.
+  Integration: `RecoversStalledWorkerWithBoundedSigcont` (SIGSTOP →
+  `worker_stalled` → recovered event), `EscalatesStalledWorkerToCrashRecovery`
+  (SIGSTOP held against SIGCONT → escalation event → ownership transfers to
+  physical 2). Timing-sensitive integration tests repeated 5×: 5/5 PASS.
+- GoogleTest 105/105 (99 pre-existing + 6 new); Catch2 105/105.
+- ASan+UBSan x2: 97/97 each (fork-integration cases skip under sanitizers,
+  established precedent).
+- TSan x2 under `setarch --addr-no-randomize`: 97/97 each, zero race reports.
+- clang-verify (pinned image, clang-14 preset): 105/105; zero warnings from
+  supervisor sources (one pre-existing `-Wunused-lambda-capture` in
+  `workers/src/worker_entry.cpp` predates this task and is out of scope).
+- Docker build (`--version`) PASS; Compose `up --wait` healthy +
+  `containers/compose/failover-smoke.sh` green 5 consecutive times.
+- `scripts/phase4-failover-timing.sh 5`: min/median/max/avg 85/90/91/89 ms,
+  0/5 iterations over `<100 ms` SLA (Phase 4 baseline preserved).
+- `./scripts/sync-agent-guidance.sh --check` PASS.
