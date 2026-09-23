@@ -262,9 +262,11 @@ here or in `NOTES.md`.
   targets a hot worker).
 - CI: `docker-compose-smoke` job extended to run each scenario once on the
   overlay after the unchanged base failover smoke (T-0031 runs 5× each).
+  Hosted CI ran all five scenarios green (see run link below).
 - New unit coverage: `Perturb.ExitSupervisorSendsSigterm` + category parse;
   GoogleTest 124/124, Catch2 124/124, ASan+UBSan x2 109/109, TSan x2
   109/109 zero race reports, clang-verify 124/124 zero new warnings.
 - `failover-smoke.sh` unchanged (git diff empty); base `docker compose
   config/up --wait/down` PASS and failover smoke green.
 - `./scripts/sync-agent-guidance.sh --check` PASS.
+- Hosted CI: [run 35804502223](https://github.com/tslator/safety-critical-high-availability/actions/runs/35804502223) on commit `8c17a95` (2026-09-22), all ten jobs green (Compose job includes the five perturbation scenarios).
