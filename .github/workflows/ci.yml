@@ -162,3 +162,7 @@ jobs:
             $overlay down --volumes --remove-orphans
             echo "::endgroup::"
           done
+      # T-0030: deterministic replay of the recorded S1 crash (the script
+      # owns its full stack lifecycle: up/run/down/up/replay/down).
+      - name: Run deterministic replay scenario (S1 replay)
+        run: containers/compose/scenarios/s1_replay.sh

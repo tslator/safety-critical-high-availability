@@ -170,6 +170,77 @@ bool exit_supervisor(pid_t target, std::error_code& ec) {
     return record_action(Category::kSupervisorExit, target, std::string{});
 }
 
+bool replay_entries(const std::vector<ReplayEntry>& entries,
+                    const std::vector<std::pair<pid_t, pid_t>>& remap, std::error_code& ec) {
+    auto resolve = [&](std::int64_t original) -> pid_t {
+        for (const auto& pair : remap) {
+            if (pair.first == original) {
+                return pair.second;
+            }
+        }
+        return static_cast<pid_t>(original);
+    };
+    std::uint64_t base_ts = 0;
+    bool base_seen = false;
+    for (const ReplayEntry& entry : entries) {
+        if (entry.is_header) {
+            continue;
+        }
+        if (!base_seen) {
+            base_ts = entry.ts_ns;
+            base_seen = true;
+        } else if (entry.ts_ns > base_ts) {
+            const auto ms = static_cast<long long>((entry.ts_ns - base_ts) / 1000000ULL);
+            const ::timespec sleep_for{ms / 1000, (ms % 1000) * 1000000L};
+            ::nanosleep(&sleep_for, nullptr);
+        }
+        const pid_t target = resolve(entry.target);
+        Category category{};
+        if (!category_from_string(entry.category, category)) {
+            ec = std::make_error_code(std::errc::invalid_argument);
+            return false;
+        }
+        switch (category) {
+            case Category::kCrash:
+                if (!crash(target, ec)) {
+                    return false;
+                }
+                break;
+            case Category::kStall:
+                if (!stall(target, ec)) {
+                    return false;
+                }
+                break;
+            case Category::kRecoverStall:
+                if (!recover_stall(target, ec)) {
+                    return false;
+                }
+                break;
+            case Category::kCorrupt:
+                if (!corrupt_next_slot(target, ec)) {
+                    return false;
+                }
+                break;
+            case Category::kDoubleFault:
+                if (!double_fault(target, resolve(entry.second_target), ec)) {
+                    return false;
+                }
+                break;
+            case Category::kSupervisorKill:
+                if (!kill_supervisor(target, ec)) {
+                    return false;
+                }
+                break;
+            case Category::kSupervisorExit:
+                if (!exit_supervisor(target, ec)) {
+                    return false;
+                }
+                break;
+        }
+    }
+    return true;
+}
+
 bool parse_invocation(int argc, const char* const* argv, Invocation& out, std::string& error) {
     if (argc < 1 || !category_from_string(argv[0], out.category)) {
         error = "perturb: unknown or missing category (crash|stall|recover-stall|corrupt|"
@@ -226,6 +297,15 @@ int run_invocation(const Invocation& invocation) {
         sink = stdout;
     }
     set_record_sink(sink);
+    // T-0030: every harness stream is versioned by a schema header record
+    // (replay_log.hpp).
+    {
+        const std::string line = "{\"schema\":" + std::to_string(kReplaySchemaVersion) +
+                                 ",\"ts\":" + std::to_string(realtime_ns()) +
+                                 ",\"category\":\"_header\",\"target\":0,\"params\":{}}\n";
+        (void)std::fwrite(line.data(), 1, line.size(), sink);
+        std::fflush(sink);
+    }
     std::error_code ec;
     bool ok = false;
     switch (invocation.category) {

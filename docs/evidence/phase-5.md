@@ -270,3 +270,59 @@ here or in `NOTES.md`.
   config/up --wait/down` PASS and failover smoke green.
 - `./scripts/sync-agent-guidance.sh --check` PASS.
 - Hosted CI: [run 35804502223](https://github.com/tslator/safety-critical-high-availability/actions/runs/35804502223) on commit `8c17a95` (2026-09-22), all ten jobs green (Compose job includes the five perturbation scenarios).
+
+## T-0030 Result
+
+- Replay log schema v1 (`"schema":1` header record, JSON lines with
+  `ts`/`category`/`target`/`params`, `double-fault` carries `second`)
+  documented in `perturb/include/safety_crit/perturb/replay_log.hpp` and
+  emitted by every `perturb` invocation (`run_invocation()`). Parser is a
+  hand-rolled extractor (no JSON dependency, DEC-0009 #5): rejects missing
+  schema header, unknown schema version, unknown category, and malformed
+  records.
+- `safety-critical-ha replay <logfile> [--target-remap <from>=<pid>]`
+  re-issues recorded signals at recorded relative offsets
+  (`perturb::replay_entries()`), remapping recorded pids onto fresh-stack
+  pids; hand-rolled parsing in `app/src/main.cpp`. Also added a read-only
+  `safety-critical-ha ownership [--region NAME]` subcommand printing
+  `read_ownership()` physical/epoch per ring, used as the scenario witness
+  probe.
+- Comparison helpers live in `perturb/tests/replay_compare.hpp`
+  (`event_categories_from_log()`, `OwnershipSnapshot`, `Witness`,
+  `witnesses_equal()`, `witnesses_equal_with_tolerance()`) and are
+  exercised through the shared `test_framework.hpp` shim by BOTH GoogleTest
+  and Catch2 (`perturb/tests/replay_test.cpp`, 4 cases: schema parsing,
+  strict validation, signal re-issue with remap, witness semantics).
+- New compose scenario `containers/compose/scenarios/s1_replay.sh` owns a
+  full two-phase lifecycle: up → S1 crash (log recorded) → ownership
+  snapshot + graceful-shutdown witness → down → up → `replay` with target
+  remap onto the fresh hot worker → same snapshots → down. Comparison:
+  supervisor event-category sequence (exact, in order), ownership tokens
+  for all three rings (exact), shutdown witness state and failover flags
+  (exact), committed records per ring (tolerance 200; record counts are
+  timing-bound wall-clock work). Reference-host PASS: events identical
+  (`first post-failover record observed`), ownership identical
+  (`ring 0 physical=2 epoch=4`, others home/epoch 2), witness
+  `state=2`, `a_first_post_failover=1`, `failover_timing_emitted=1` both
+  runs, `a_records` 586 vs 606.
+- Deviations: (1) The scenario compares the SUPERVISOR event sequence as
+  the deterministic proxy; the monitor's `worker_crashed` alert edge races
+  with the supervisor's replacement on this host (documented since T-0029
+  S1), and monitor-category order parsing itself is unit-covered by
+  `event_categories_from_log()` in both frameworks. (2) Ownership
+  snapshots MUST be taken before the graceful shutdown: the container
+  restart policy relaunches the supervisor against a fresh `/dev/shm`
+  region, which re-initializes ownership tokens (observed directly; the
+  first version of the scenario read post-restart tokens and compared
+  meaningless epoch-2 values). (3) Record-count tolerance exists because
+  `a_records` grows with wall-clock time between fault and shutdown; the
+  exact contract applies to events, ownership, state, corruption counts,
+  and failover flags.
+- CI: `docker-compose-smoke` job runs `s1_replay.sh` after the five
+  single-stack scenarios.
+- New unit coverage: 4 replay cases; GoogleTest 128/128, Catch2 128/128,
+  ASan+UBSan x2 112/112, TSan x2 112/112 zero race reports (note: TSan
+  toolchain must run under `setarch --addr-no-randomize` INCLUDING the
+  build step, because gtest test-discovery executes the TSan binary at
+  build time; CI already wraps configure/build/test), clang-verify
+  128/128 zero new warnings.

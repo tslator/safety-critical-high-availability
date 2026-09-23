@@ -9,6 +9,7 @@
 #include <string>
 #include <system_error>
 #include <unistd.h>
+#include <sys/prctl.h>
 #include <sys/wait.h>
 
 #include "safety_crit/perturb/harness.hpp"
@@ -33,6 +34,8 @@ pid_t spawn_sleeper() {
     const pid_t pid = ::fork();
     SAFETY_CRIT_ASSERT(pid >= 0);
     if (pid == 0) {
+        // A stray child holding the test's stdout pipe would deadlock ctest.
+        (void)::prctl(PR_SET_PDEATHSIG, SIGKILL);
         for (;;) {
             ::pause();
         }
@@ -48,6 +51,7 @@ pid_t spawn_usr2_exiter() {
     const pid_t pid = ::fork();
     SAFETY_CRIT_ASSERT(pid >= 0);
     if (pid == 0) {
+        (void)::prctl(PR_SET_PDEATHSIG, SIGKILL);
         ::close(ready[0]);
         struct sigaction action{};
         action.sa_handler = [](int) { ::_exit(42); };

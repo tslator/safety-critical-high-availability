@@ -16,7 +16,11 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
+#include <vector>
 #include <sys/types.h>
+
+#include "safety_crit/perturb/replay_log.hpp"
 
 namespace safety_crit::perturb {
 
@@ -98,5 +102,12 @@ bool parse_invocation(int argc, const char* const* argv, Invocation& out, std::s
 // Executes a parsed invocation: opens the sink (append) from out_path when
 // given, performs the action, returns 0 on success, 1 on runtime failure.
 int run_invocation(const Invocation& invocation);
+
+// T-0030 (DEC-0012 #8): re-issue the parsed log at relative time offsets
+// (ts - first action ts), applying `remap` to original pids (targets and
+// double-fault second victims). Header records are skipped; unknown pids
+// stay as recorded. Returns false on the first send failure (ec set).
+bool replay_entries(const std::vector<ReplayEntry>& entries,
+                    const std::vector<std::pair<pid_t, pid_t>>& remap, std::error_code& ec);
 
 }  // namespace safety_crit::perturb

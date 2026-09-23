@@ -1,14 +1,24 @@
 #include <cerrno>
+#include <charconv>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <utility>
+#include <vector>
+#include <sys/types.h>
 
 #include "safety_crit/monitors/monitor_config.hpp"
 #include "safety_crit/monitors/monitor_entry.hpp"
 #include "safety_crit/monitors/pidfile_liveness.hpp"
 #include "safety_crit/perturb/harness.hpp"
+#include "safety_crit/shared_memory/shared_region.hpp"
+#include "safety_crit/shared_memory/shm_attach.hpp"
 #include "safety_crit/supervisor/supervisor.hpp"
 #include "safety_crit/workers/pidfile.hpp"
 #include "safety_crit/workers/worker_config.hpp"
@@ -34,7 +44,9 @@ void print_usage(std::ostream& out) {
         << "           [--ticks N]\n"
         << "       safety-critical-ha perturb <crash|stall|recover-stall|corrupt|\n"
         << "           double-fault|supervisor-kill|supervisor-exit> --target <pid>\n"
-        << "           [--target2 <pid>] [--out <path>]\n";
+        << "           [--target2 <pid>] [--out <path>]\n"
+        << "       safety-critical-ha replay <logfile> [--target-remap <from>=<pid>]\n"
+        << "       safety-critical-ha ownership [--region NAME]\n";
 }
 
 bool parse_u64(std::string_view text, std::uint64_t& out) {
@@ -274,6 +286,87 @@ int run_supervisor_command(int argc, char* argv[]) {
     return safety_crit::supervisor::run_supervisor(cfg);
 }
 
+int run_replay_command(int argc, char* argv[]) {
+    const std::string_view log_path(argv[2]);
+    std::vector<std::pair<pid_t, pid_t>> remap;
+    for (int i = 3; i < argc; ++i) {
+        const std::string_view arg(argv[i]);
+        if (arg != "--target-remap") {
+            std::cerr << "replay: unknown option: " << arg << "\n";
+            return 2;
+        }
+        if (++i >= argc) {
+            std::cerr << "replay: --target-remap requires <from>=<pid>\n";
+            return 2;
+        }
+        const std::string_view spec(argv[i]);
+        const std::size_t eq = spec.find('=');
+        std::int64_t from = 0;
+        std::int64_t to = 0;
+        const auto parse_one = [&](std::string_view text, std::int64_t& out) {
+            const auto result = std::from_chars(text.data(), text.data() + text.size(), out);
+            return result.ec == std::errc{} && out > 0;
+        };
+        if (eq == std::string_view::npos || !parse_one(spec.substr(0, eq), from) ||
+            !parse_one(spec.substr(eq + 1), to)) {
+            std::cerr << "replay: --target-remap requires <from>=<pid>\n";
+            return 2;
+        }
+        remap.emplace_back(static_cast<pid_t>(from), static_cast<pid_t>(to));
+    }
+
+    std::ifstream input{std::filesystem::path{log_path}};
+    if (!input) {
+        std::cerr << "replay: cannot open '" << log_path << "'\n";
+        return 2;
+    }
+    std::stringstream buffer;
+    buffer << input.rdbuf();
+    std::vector<safety_crit::perturb::ReplayEntry> entries;
+    std::string error;
+    if (!safety_crit::perturb::parse_replay_log(buffer.str(), entries, error)) {
+        std::cerr << error << "\n";
+        return 2;
+    }
+    std::error_code ec;
+    if (!safety_crit::perturb::replay_entries(entries, remap, ec)) {
+        std::cerr << "replay: signal delivery failed (errno " << ec.value() << ")\n";
+        return 1;
+    }
+    return 0;
+}
+
+// Read-only ownership probe for scenario witnesses (T-0030): prints
+// `ownership <ring> physical=<n> epoch=<n>` per logical ring.
+int run_ownership_command(int argc, char* argv[]) {
+    const char* region = safety_crit::workers::kDefaultRegionName;
+    for (int i = 2; i < argc; ++i) {
+        const std::string_view arg(argv[i]);
+        if (arg == "--region" && i + 1 < argc) {
+            region = argv[++i];
+        } else {
+            std::cerr << "ownership: unknown or invalid option: " << arg << "\n";
+            return 2;
+        }
+    }
+    auto handle = safety_crit::shared_memory::SharedRegionHandle::create_or_open(region);
+    if (!handle.ok()) {
+        std::cerr << "ownership: cannot attach region (errno " << handle.errnum() << ")\n";
+        return 1;
+    }
+    for (std::size_t ring = 0; ring < safety_crit::shared_memory::kMaxWorkers; ++ring) {
+        safety_crit::shared_memory::OwnershipToken token;
+        if (!safety_crit::shared_memory::read_ownership(*handle.get(), ring, token)) {
+            std::cerr << "ownership: read failed for ring " << ring << "\n";
+            return 1;
+        }
+        std::cout << "ownership " << ring << " physical=" << token.physical_owner
+                  << " epoch=" << token.epoch << "\n";
+    }
+    handle.detach();
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -300,6 +393,14 @@ int main(int argc, char* argv[]) {
             return 2;
         }
         return safety_crit::perturb::run_invocation(invocation);
+    }
+    if (argc >= 3 && std::string_view(argv[1]) == "replay") {
+        // T-0030 (DEC-0012 #8): re-issue a recorded log at relative offsets.
+        return run_replay_command(argc, argv);
+    }
+    if (argc >= 2 && std::string_view(argv[1]) == "ownership") {
+        // T-0030: read-only ownership snapshot for scenario witnesses.
+        return run_ownership_command(argc, argv);
     }
     print_usage(std::cerr);
     return 1;

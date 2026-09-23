@@ -1,5 +1,6 @@
 add_library(safety_crit_perturb STATIC
     src/harness.cpp
+    src/replay_log.cpp
 )
 add_library(safety_crit::perturb ALIAS safety_crit_perturb)
 
