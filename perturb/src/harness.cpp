@@ -62,6 +62,8 @@ const char* to_string(Category category) {
             return "double-fault";
         case Category::kSupervisorKill:
             return "supervisor-kill";
+        case Category::kSupervisorExit:
+            return "supervisor-exit";
     }
     return "unknown";
 }
@@ -69,7 +71,8 @@ const char* to_string(Category category) {
 bool category_from_string(std::string_view name, Category& out) {
     for (const Category candidate : {Category::kCrash, Category::kStall,
                                      Category::kRecoverStall, Category::kCorrupt,
-                                     Category::kDoubleFault, Category::kSupervisorKill}) {
+                                     Category::kDoubleFault, Category::kSupervisorKill,
+                                     Category::kSupervisorExit}) {
         if (name == to_string(candidate)) {
             out = candidate;
             return true;
@@ -159,10 +162,18 @@ bool kill_supervisor(pid_t target, std::error_code& ec) {
     return record_action(Category::kSupervisorKill, target, std::string{});
 }
 
+bool exit_supervisor(pid_t target, std::error_code& ec) {
+    ec = std::error_code{};
+    if (send_signal(target, SIGTERM, ec) != 0) {
+        return false;
+    }
+    return record_action(Category::kSupervisorExit, target, std::string{});
+}
+
 bool parse_invocation(int argc, const char* const* argv, Invocation& out, std::string& error) {
     if (argc < 1 || !category_from_string(argv[0], out.category)) {
         error = "perturb: unknown or missing category (crash|stall|recover-stall|corrupt|"
-                "double-fault|supervisor-kill)";
+                "double-fault|supervisor-kill|supervisor-exit)";
         return false;
     }
     bool target_seen = false;
@@ -235,6 +246,9 @@ int run_invocation(const Invocation& invocation) {
             break;
         case Category::kSupervisorKill:
             ok = kill_supervisor(invocation.target, ec);
+            break;
+        case Category::kSupervisorExit:
+            ok = exit_supervisor(invocation.target, ec);
             break;
     }
     set_record_sink(nullptr);

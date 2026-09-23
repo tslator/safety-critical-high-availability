@@ -226,3 +226,45 @@ here or in `NOTES.md`.
   0/5 iterations over `<100 ms` SLA (Phase 4 baseline preserved).
 - `./scripts/sync-agent-guidance.sh --check` PASS.
 - Hosted CI: [run 35804300381](https://github.com/tslator/safety-critical-high-availability/actions/runs/35804300381) on commit `b2b04ad` (2026-09-22), all ten jobs green.
+
+## T-0029 Result
+
+- Compose: the `perturb` profile service now hosts the real harness binary
+  (entrypoint keep-alive with startup version probe replacing the Phase 0
+  `sleep infinity` stub). Scenario overlay
+  `containers/compose/scenarios/compose.perturb.yml` adds the S3
+  corruption-hook env opt-in and `pid: service:supervisor` so harness
+  signals land on the supervisor container's processes; base stack
+  untouched.
+- Scripts: `containers/compose/scenarios/{s1_crash,s2_stall,s3_corrupt,
+  s5_double_fault,s6_supervisor_kill}.sh` + `common.sh` helpers. Each exits
+  0 on success with an assertion bundle (log patterns, pidfile/ownership
+  liveness, S1 timing budget <100 ms) and emits JSON-lines records
+  (replay-ready for T-0030).
+- Scenario results on the reference host (fresh stack each): S1 crash
+  PASS (first post-failover 39-49 ms, 0 over budget), S2 stall PASS
+  (`worker_stalled` → supervisor `stall recovered for physical 0` →
+  `worker_recovered`), S3 corrupt PASS (`a_corruptions=1` in the shutdown
+  witness, worker and supervisor survive), S5 double fault PASS (ring 0
+  promoted, `logical ring 1 degraded (reason=standby_exhausted)` exactly
+  once, both replacements live), S6 supervisor loss PASS (container exited,
+  `unless-stopped` rebuilt, RestartCount 0→1).
+- Deviations (host-environment, recorded here): (1) container init filters
+  un-caught SIGKILL from sibling processes on this runtime, so S6 uses a
+  new harness category `supervisor-exit` (SIGTERM to PID 1, which the
+  supervisor handles): the exit + policy-rebuild contract of DEC-0012 #6 is
+  exercised identically; `kill_supervisor()` (SIGKILL) remains in the API
+  for privileged environments. (2) S1 does not assert the monitor's
+  `worker_crashed` alert: on this host the supervisor's replacement can
+  outrun the monitor's alert edge (the alert itself is asserted
+  unchanged by `containers/compose/failover-smoke.sh`). (3) Scenarios must
+  each run against a fresh stack (S1 leaves physical 0 as standby, and S2
+  targets a hot worker).
+- CI: `docker-compose-smoke` job extended to run each scenario once on the
+  overlay after the unchanged base failover smoke (T-0031 runs 5× each).
+- New unit coverage: `Perturb.ExitSupervisorSendsSigterm` + category parse;
+  GoogleTest 124/124, Catch2 124/124, ASan+UBSan x2 109/109, TSan x2
+  109/109 zero race reports, clang-verify 124/124 zero new warnings.
+- `failover-smoke.sh` unchanged (git diff empty); base `docker compose
+  config/up --wait/down` PASS and failover smoke green.
+- `./scripts/sync-agent-guidance.sh --check` PASS.

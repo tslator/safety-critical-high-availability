@@ -137,7 +137,7 @@ jobs:
   docker-compose-smoke:
     name: Compose runtime + failover smoke
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Validate stack startup, failover, and cleanup
@@ -149,3 +149,16 @@ jobs:
           docker compose exec supervisor safety-critical-ha --version
           ./containers/compose/failover-smoke.sh
           docker compose down --volumes --remove-orphans
+      # T-0029: Phase 5 perturbation scenarios S1/S2/S3/S5/S6, once each on
+      # the scenario overlay (T-0031 runs them 5x each for phase exit).
+      - name: Run perturbation scenarios (S1, S2, S3, S5, S6)
+        run: |
+          overlay="docker compose -f docker-compose.yml -f containers/compose/scenarios/compose.perturb.yml --profile perturb"
+          $overlay config --quiet
+          for scenario in s1_crash s2_stall s3_corrupt s5_double_fault s6_supervisor_kill; do
+            echo "::group::scenario ${scenario}"
+            $overlay up --wait --no-build
+            containers/compose/scenarios/${scenario}.sh
+            $overlay down --volumes --remove-orphans
+            echo "::endgroup::"
+          done

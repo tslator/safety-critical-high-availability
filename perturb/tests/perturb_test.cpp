@@ -177,6 +177,18 @@ SAFETY_CRIT_TEST_CASE(Perturb, KillSupervisorSendsSigkill) {
     SAFETY_CRIT_ASSERT(WTERMSIG(status) == SIGKILL);
     SAFETY_CRIT_ASSERT(sink.text().find("\"category\":\"supervisor-kill\"") != std::string::npos);
 }
+
+SAFETY_CRIT_TEST_CASE(Perturb, ExitSupervisorSendsSigterm) {
+    CapturedSink sink;
+    const pid_t target = spawn_sleeper();
+    std::error_code ec;
+    SAFETY_CRIT_ASSERT(exit_supervisor(target, ec));
+    int status = 0;
+    SAFETY_CRIT_ASSERT(::waitpid(target, &status, 0) == target);
+    SAFETY_CRIT_ASSERT(WIFSIGNALED(status));
+    SAFETY_CRIT_ASSERT(WTERMSIG(status) == SIGTERM);
+    SAFETY_CRIT_ASSERT(sink.text().find("\"category\":\"supervisor-exit\"") != std::string::npos);
+}
 #endif  // !SAFETY_CRIT_PERT_SANITIZED
 
 SAFETY_CRIT_TEST_CASE(Perturb, InvalidTargetSetsErrorCode) {

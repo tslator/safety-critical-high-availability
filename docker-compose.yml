@@ -59,7 +59,13 @@ services:
       safety-critical.role: perturb
     cpus: "0.5"
     mem_limit: 512m
-    entrypoint: ["sleep", "infinity"]
+    # T-0029: replaces the Phase 0 `sleep infinity` stub with the real
+    # harness binary. The service is a keep-alive host for
+    # `docker compose exec perturb safety-critical-ha perturb ...` driven by
+    # the host-side scenario scripts; the version probe doubles as a
+    # startup self-check. NEVER FOR PRODUCTION USE (DEC-0007 pattern).
+    entrypoint: ["/bin/sh", "-c",
+      "trap 'exit 0' TERM INT; safety-critical-ha --version; while :; do sleep 1; done"]
     cap_add:
       - SYS_NICE
       - SYS_PTRACE

@@ -1,0 +1,17 @@
+# T-0029 scenario overlay (DEC-0012 #9): merged with the base stack by the
+# host-side scenario scripts via
+#   docker compose -f docker-compose.yml -f containers/compose/scenarios/compose.perturb.yml --profile perturb
+# The base stack stays untouched: the corruption-hook opt-in env var and the
+# shared PID namespace live only here.
+services:
+  supervisor:
+    environment:
+      # T-0027: scenario S3 exercises the SIGUSR2 poison-next-slot hook;
+      # the supervisor forwards its environment to forked workers.
+      SAFETY_CRIT_CORRUPT_HOOK: "1"
+
+  perturb:
+    # Scenario-driven harness execution needs to see the supervisor
+    # container's processes (signals land on the supervisor's worker
+    # processes and PID 1).
+    pid: "service:supervisor"

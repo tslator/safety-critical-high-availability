@@ -30,6 +30,12 @@ enum class Category : std::uint8_t {
     kCorrupt,
     kDoubleFault,
     kSupervisorKill,
+    // Container-safe supervisor loss: SIGTERM to PID 1 (a container's init
+    // process filters un-caught SIGKILL sent from sibling processes, so the
+    // observable supervisor-loss path inside Compose is the caught-SIGTERM
+    // graceful shutdown; the exit + `unless-stopped` rebuild contract is
+    // identical, DEC-0012 #6).
+    kSupervisorExit,
 };
 
 const char* to_string(Category category);
@@ -74,6 +80,10 @@ bool corrupt_next_slot(pid_t target, std::error_code& ec);
 bool double_fault(pid_t first, pid_t second, std::error_code& ec);
 // SIGKILL at the (container PID 1) supervisor (DEC-0012 #6).
 bool kill_supervisor(pid_t target, std::error_code& ec);
+// SIGTERM at PID 1: the container-safe supervisor-loss path (the supervisor
+// handles SIGTERM, so it is delivered; the container still exits and the
+// `unless-stopped` policy still rebuilds, DEC-0012 #6).
+bool exit_supervisor(pid_t target, std::error_code& ec);
 
 // Parsed CLI invocation: `perturb <category> --target <pid>
 // [--target2 <pid>] [--out <path>]`.

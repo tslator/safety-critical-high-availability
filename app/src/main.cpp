@@ -33,7 +33,7 @@ void print_usage(std::ostream& out) {
         << "           [--stall-grace-ms MS] [--region NAME] [--pid-dir DIR]\n"
         << "           [--ticks N]\n"
         << "       safety-critical-ha perturb <crash|stall|recover-stall|corrupt|\n"
-        << "           double-fault|supervisor-kill> --target <pid>\n"
+        << "           double-fault|supervisor-kill|supervisor-exit> --target <pid>\n"
         << "           [--target2 <pid>] [--out <path>]\n";
 }
 
