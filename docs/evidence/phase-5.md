@@ -326,3 +326,4 @@ here or in `NOTES.md`.
   build step, because gtest test-discovery executes the TSan binary at
   build time; CI already wraps configure/build/test), clang-verify
   128/128 zero new warnings.
+- Hosted CI: [run 35864589526](https://github.com/tslator/safety-critical-high-availability/actions/runs/35864589526) on commit `e2ca0a0` (2026-09-23), all jobs green (Compose job includes the five perturbation scenarios plus the S1 deterministic replay).
