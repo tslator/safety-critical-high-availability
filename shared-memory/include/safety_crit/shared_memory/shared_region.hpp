@@ -201,4 +201,23 @@ bool push(SharedRegion& region, std::size_t worker_idx, const T& value) {
     return true;
 }
 
+// T-0027 (DEC-0012 #5) fault-injection counterpart of push(): commits with a
+// deliberately corrupted slot CRC so the consumer's skip-and-count path is
+// exercised. Test surface only -- never for production use. Region-level
+// accounting mirrors push(): integrity_word covers headers, not slots, so a
+// corrupted payload never invalidates it.
+template <typename T>
+    requires std::is_trivially_copyable_v<T>
+bool push_with_bad_crc(SharedRegion& region, std::size_t worker_idx, const T& value) {
+    if (worker_idx >= kMaxWorkers) {
+        return false;
+    }
+    if (!region.rings[worker_idx].try_push_with_bad_crc(value)) {
+        return false;
+    }
+    region.global_seq.fetch_add(1u, std::memory_order_relaxed);
+    refresh_region_integrity(region);
+    return true;
+}
+
 }  // namespace safety_crit::shared_memory

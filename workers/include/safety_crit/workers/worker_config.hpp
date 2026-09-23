@@ -35,7 +35,16 @@ struct WorkerConfig {
     std::chrono::milliseconds tick_interval{10};
     std::chrono::microseconds cpu_budget{1000};
     std::uint64_t seed_base{0x9E3779B97F4A7C15ULL};
+    // T-0027 (DEC-0012 #5): opt-in install of the SIGUSR2 corruption hook.
+    // Production default is false; the CLI flag or env var opts in (see
+    // corruption_hook_opt_in).
+    bool corrupt_hook{false};
 };
+
+// T-0027 (DEC-0012 #5): single decision point for the corruption-hook opt-in:
+// the CLI flag (--corrupt-hook) or SAFETY_CRIT_CORRUPT_HOOK=1. Anything else
+// keeps the production default (no handler installed).
+bool corruption_hook_opt_in(bool cli_flag, const char* env_value);
 
 // Validation boundary (CLI parsing in T2.3, tests here): a config is valid
 // when the worker index names an existing region slot, the tick count is

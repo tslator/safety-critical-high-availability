@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <stop_token>
 #include <thread>
 
@@ -50,12 +51,20 @@ int run_hot(shared_memory::SharedRegion& region, const WorkerConfig& cfg,
     std::stop_source src;  // never requested; stop rides the signal flag
     auto result = run_work_loop(
         cfg, &status, src.get_token(), signal_state.stop_requested,
-        [&region, &cfg, &ownership, &src](const ProcessedData& payload) {
+        [&region, &cfg, &ownership, &src, &signal_state](const ProcessedData& payload) {
             // A process that loses its generation must stop retrying rather
             // than publish to a ring now owned by its replacement.
             if (!shared_memory::ownership_valid(region, ownership)) {
                 src.request_stop();
                 return false;
+            }
+            // T-0027 (DEC-0012 #5): the poison-next-slot flag is checked and
+            // consumed here, between the loop's ticks and outside the ring
+            // hot path; one flag, one poisoned push, then normal operation.
+            if (signal_state.poison_next_slot != 0) {
+                signal_state.poison_next_slot = 0;
+                return shared_memory::push_with_bad_crc(region, ownership.logical_ring,
+                                                        payload);
             }
             return shared_memory::push(region, ownership.logical_ring, payload);
         },
@@ -163,6 +172,17 @@ int run_worker(const WorkerConfig& cfg, const char* region_name, const char* pid
         remove_worker_pidfile(pid_dir, cfg.worker_idx);
         handle.detach();
         return 1;
+    }
+    // T-0027 (DEC-0012 #5): the SIGUSR2 corruption hook is test surface only;
+    // the production default installs nothing extra (hot-path policy
+    // DEC-0009 #4 stays in force).
+    if (corruption_hook_opt_in(cfg.corrupt_hook, std::getenv("SAFETY_CRIT_CORRUPT_HOOK"))) {
+        if (!signals::install_corruption_hook(signal_state)) {
+            std::fprintf(stderr, "worker: corruption hook installation failed\n");
+            remove_worker_pidfile(pid_dir, cfg.worker_idx);
+            handle.detach();
+            return 1;
+        }
     }
 
     int rc = 0;

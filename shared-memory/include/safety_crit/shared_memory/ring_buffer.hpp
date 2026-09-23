@@ -172,40 +172,20 @@ public:
     template <typename T>
         requires std::is_trivially_copyable_v<T>
     bool try_push(const T& value) {
-        static_assert(sizeof(T) <= kSlotBytes, "value does not fit in one slot");
-        // Producer side; see protocol notes at the top of this header.
-        std::uint64_t pos = tail_.load(std::memory_order_relaxed);
-        for (;;) {
-            Cell& cell = cells_[pos & kMask];
-            const std::uint64_t seq = cell.sequence.load(std::memory_order_acquire);
-            const std::int64_t diff = static_cast<std::int64_t>(seq) -
-                                      static_cast<std::int64_t>(pos);
-            if (diff == 0) {
-                // Slot ready for this position; claim it. On failure (or a
-                // spurious weak failure) `pos` is updated to the current tail,
-                // so the loop re-derives everything from a fresh view.
-                if (tail_.compare_exchange_weak(pos, pos + 1, std::memory_order_relaxed)) {
-                    // Claimed: exclusive ownership from here until the commit
-                    // store below publishes payload and CRC to consumers.
-                    std::memcpy(cell.payload, &value, sizeof(T));
-                    // T1.3: authenticate the FULL payload field, not just
-                    // sizeof(T): bytes past the value may hold stale data from
-                    // an earlier lap and are verified too (see DEC-0005 #3).
-                    // Plain store under exclusive ownership -- visibility rides
-                    // the commit release-store below.
-                    cell.crc = crc32c(cell.payload, kSlotBytes);
-                    cell.sequence.store(pos + 1, std::memory_order_release);
-                    return true;  // committed: slot holds commit(p) = p + 1
-                }
-            } else if (diff < 0) {
-                // Slot holds commit(p-n): the previous lap's item has not been
-                // released yet. Buffer full -- a sound "no" for this attempt.
-                return false;
-            } else {
-                // Stale view of `pos` (slot already progressed); re-read tail.
-                pos = tail_.load(std::memory_order_relaxed);
-            }
-        }
+        return try_push_impl(value, 0u);
+    }
+
+    // T-0027 (DEC-0012 #5) fault-injection push: identical to try_push
+    // except the committed CRC field is deliberately wrong (XOR-ed with all
+    // ones). Every write still happens inside the producer's exclusive
+    // ownership window, so the protocol stays sound; the consumer's
+    // skip-and-count path treats it exactly like real memory corruption.
+    // Test-surface only -- never for production use (DEC-0007 destroy()
+    // opt-in discipline).
+    template <typename T>
+        requires std::is_trivially_copyable_v<T>
+    bool try_push_with_bad_crc(const T& value) {
+        return try_push_impl(value, 0xFFFFFFFFu);
     }
 
     // Attempts to take the oldest value. Returns false without side effects
@@ -425,6 +405,47 @@ public:
     alignas(64) std::atomic<std::uint64_t> corruption_count_{0};
 
 private:
+    // Shared producer claim/commit path for try_push and its fault-injection
+    // variant. `crc_xor` is applied to the stored tag after the CRC is
+    // computed over the full payload field (0 for a clean push).
+    template <typename T>
+        requires std::is_trivially_copyable_v<T>
+    bool try_push_impl(const T& value, std::uint32_t crc_xor) {
+        static_assert(sizeof(T) <= kSlotBytes, "value does not fit in one slot");
+        // Producer side; see protocol notes at the top of this header.
+        std::uint64_t pos = tail_.load(std::memory_order_relaxed);
+        for (;;) {
+            Cell& cell = cells_[pos & kMask];
+            const std::uint64_t seq = cell.sequence.load(std::memory_order_acquire);
+            const std::int64_t diff = static_cast<std::int64_t>(seq) -
+                                      static_cast<std::int64_t>(pos);
+            if (diff == 0) {
+                // Slot ready for this position; claim it. On failure (or a
+                // spurious weak failure) `pos` is updated to the current tail,
+                // so the loop re-derives everything from a fresh view.
+                if (tail_.compare_exchange_weak(pos, pos + 1, std::memory_order_relaxed)) {
+                    // Claimed: exclusive ownership from here until the commit
+                    // store below publishes payload and CRC to consumers.
+                    std::memcpy(cell.payload, &value, sizeof(T));
+                    // T1.3: authenticate the FULL payload field, not just
+                    // sizeof(T): bytes past the value may hold stale data from
+                    // an earlier lap and are verified too (see DEC-0005 #3).
+                    // Plain store under exclusive ownership -- visibility rides
+                    // the commit release-store below.
+                    cell.crc = crc32c(cell.payload, kSlotBytes) ^ crc_xor;
+                    cell.sequence.store(pos + 1, std::memory_order_release);
+                    return true;  // committed: slot holds commit(p) = p + 1
+                }
+            } else if (diff < 0) {
+                // Slot holds commit(p-n): the previous lap's item has not been
+                // released yet. Buffer full -- a sound "no" for this attempt.
+                return false;
+            } else {
+                // Stale view of `pos` (slot already progressed); re-read tail.
+                pos = tail_.load(std::memory_order_relaxed);
+            }
+        }
+    }
     alignas(64) Cell cells_[kSlotCount];
 };
 

@@ -156,6 +156,36 @@ SAFETY_CRIT_TEST_CASE(RingBufferCorruption, SingleSlotCorruptionSkipsExactlyThat
     SAFETY_CRIT_ASSERT(ring.corruption_count() == 1);
 }
 
+SAFETY_CRIT_TEST_CASE(RingBufferCorruption, PoisonPushIsSkippedAndCountedOnce) {
+    // T-0027 (DEC-0012 #5) fault-injection push: the producer commits with a
+    // deliberately wrong CRC inside its exclusive-ownership window. The
+    // consumer must skip it exactly once and resume normal operation.
+    Ring16 ring;
+    SAFETY_CRIT_ASSERT(ring.initialize());
+    SAFETY_CRIT_ASSERT(ring.try_push(Msg{9, 0}));
+    SAFETY_CRIT_ASSERT(ring.try_push_with_bad_crc(Msg{9, 1}));
+    SAFETY_CRIT_ASSERT(ring.try_push(Msg{9, 2}));
+    // The poisoned slot is committed like any other push.
+    SAFETY_CRIT_ASSERT(ring.pushed() == 3u);
+
+    Msg out{};
+    SAFETY_CRIT_ASSERT(ring.try_pop(out));
+    SAFETY_CRIT_ASSERT(out.index == 0u);
+
+    out = canary_msg();
+    SAFETY_CRIT_ASSERT(!ring.try_pop(out));
+    SAFETY_CRIT_ASSERT(is_canary(out));
+    SAFETY_CRIT_ASSERT(ring.corruption_count() == 1u);
+
+    SAFETY_CRIT_ASSERT(ring.try_pop(out));
+    SAFETY_CRIT_ASSERT(out.index == 2u);
+    out = canary_msg();
+    SAFETY_CRIT_ASSERT(!ring.try_pop(out));  // empty: sound refusal
+    SAFETY_CRIT_ASSERT(is_canary(out));
+    SAFETY_CRIT_ASSERT(ring.empty());
+    SAFETY_CRIT_ASSERT(ring.corruption_count() == 1u);  // counted exactly once
+}
+
 SAFETY_CRIT_TEST_CASE(RingBufferCorruption, CorruptedCrcFieldDetected) {
     // The tag itself is in-cell: corrupting it must be caught by the same
     // mismatch check as a corrupted payload.

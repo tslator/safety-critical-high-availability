@@ -10,6 +10,10 @@ namespace safety_crit::workers::signals {
 // consumes it between ticks. Nothing non-trivial happens in a handler.
 struct SignalState {
     volatile std::sig_atomic_t stop_requested{0};
+    // T-0027 (DEC-0012 #5): set once by the opt-in SIGUSR2 corruption hook,
+    // consumed (cleared) by exactly one poisoned push between ticks. Never
+    // written unless install_corruption_hook() was called.
+    volatile std::sig_atomic_t poison_next_slot{0};
 };
 
 // SIGUSR1 forced-crash exit code (128 + signal, the shell convention).
@@ -22,6 +26,12 @@ inline constexpr int kCrashExitCode = 128 + 10;
 // `state` must outlive the process (or at least every installed handler).
 bool install(SignalState& state);
 
+// T-0027 (DEC-0012 #5): install the SIGUSR2 "poison next slot" handler.
+// NEVER called by the production default -- only when the operator opted in
+// (--corrupt-hook or SAFETY_CRIT_CORRUPT_HOOK=1). The handler stores a
+// sig_atomic_t through the state pointer and nothing else.
+bool install_corruption_hook(SignalState& state);
+
 // Restore default dispositions for the three handled signals and detach the
 // state pointer. Intended for tests/tests-teardown only.
 void uninstall();
@@ -31,6 +41,7 @@ void uninstall();
 struct HandlerSnapshot {
     bool stop_custom{false};
     bool crash_custom{false};
+    bool corruption_custom{false};
 };
 HandlerSnapshot query_handlers();
 

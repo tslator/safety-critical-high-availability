@@ -36,8 +36,9 @@ struct OutputWitness {
 bool parse_monitor_line(std::string_view line, MonitorLine& out);
 
 // Drains committed records outside the ring hot path. The transport position
-// is the authoritative sequence witness; CRC failures and ownership changes
-// are rejected rather than silently converted into output loss.
+// is the authoritative sequence witness; corruption skips are counted and
+// tolerated (T-0027, sequence continuity carries across the skip), while
+// ownership read failures and real sequence gaps are rejected.
 bool drain_output_witness(shared_memory::SharedRegion& region, std::size_t logical_ring,
                           OutputWitness& witness);
 

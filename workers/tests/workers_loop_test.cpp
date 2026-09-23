@@ -9,6 +9,8 @@
 #include <chrono>
 #include <cstdint>
 #include <stop_token>
+#include <unistd.h>
+#include <sys/wait.h>
 #include <vector>
 
 #include "safety_crit/shared_memory/atomic_flags.hpp"
@@ -224,4 +226,38 @@ SAFETY_CRIT_TEST_CASE(WorkersLoop, SignalInstallAndQuery) {
     const signals::HandlerSnapshot restored = signals::query_handlers();
     SAFETY_CRIT_ASSERT(!restored.stop_custom);
     SAFETY_CRIT_ASSERT(!restored.crash_custom);
+}
+
+SAFETY_CRIT_TEST_CASE(WorkersLoop, CorruptionHookIsOptInAndSetsPoisonFlag) {
+    signals::SignalState state;
+    SAFETY_CRIT_ASSERT(signals::install(state));
+    // Production default: plain install() installs nothing for SIGUSR2.
+    SAFETY_CRIT_ASSERT(!signals::query_handlers().corruption_custom);
+    SAFETY_CRIT_ASSERT(state.poison_next_slot == 0);
+
+    SAFETY_CRIT_ASSERT(signals::install_corruption_hook(state));
+    SAFETY_CRIT_ASSERT(signals::query_handlers().corruption_custom);
+    SAFETY_CRIT_ASSERT(::kill(::getpid(), SIGUSR2) == 0);
+    SAFETY_CRIT_ASSERT(state.poison_next_slot == 1);
+
+    signals::uninstall();
+    SAFETY_CRIT_ASSERT(!signals::query_handlers().corruption_custom);
+    SAFETY_CRIT_ASSERT(state.poison_next_slot == 1);  // uninstall never touches state
+
+    // Negative test: after uninstall the SIGUSR2 disposition is the default
+    // (terminate) again -- verified in a throwaway child process.
+    const pid_t child = ::fork();
+    SAFETY_CRIT_ASSERT(child >= 0);
+    if (child == 0) {
+        signals::SignalState child_state;
+        signals::install(child_state);
+        signals::install_corruption_hook(child_state);
+        signals::uninstall();
+        ::kill(::getpid(), SIGUSR2);  // default disposition: terminate
+        ::_exit(0);
+    }
+    int status = 0;
+    SAFETY_CRIT_ASSERT(::waitpid(child, &status, 0) == child);
+    SAFETY_CRIT_ASSERT(WIFSIGNALED(status));
+    SAFETY_CRIT_ASSERT(WTERMSIG(status) == SIGUSR2);
 }

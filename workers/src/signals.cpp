@@ -25,6 +25,15 @@ void crash_handler(int) {
     std::_Exit(kCrashExitCode);
 }
 
+void poison_handler(int) {
+    // T-0027 (DEC-0012 #5): store a sig_atomic_t through the state pointer
+    // -- async-signal-safe, nothing else.
+    SignalState* state = g_state.load(std::memory_order_relaxed);
+    if (state != nullptr) {
+        state->poison_next_slot = 1;
+    }
+}
+
 bool set_disposition(int signum, void (*handler)(int)) {
     struct sigaction action {};
     action.sa_handler = handler;
@@ -55,10 +64,16 @@ bool install(SignalState& state) {
     return set_disposition(SIGUSR1, crash_handler);
 }
 
+bool install_corruption_hook(SignalState& state) {
+    g_state.store(&state, std::memory_order_relaxed);
+    return set_disposition(SIGUSR2, poison_handler);
+}
+
 void uninstall() {
     set_disposition(SIGTERM, SIG_DFL);
     set_disposition(SIGINT, SIG_DFL);
     set_disposition(SIGUSR1, SIG_DFL);
+    set_disposition(SIGUSR2, SIG_DFL);
     g_state.store(nullptr, std::memory_order_relaxed);
 }
 
@@ -66,6 +81,7 @@ HandlerSnapshot query_handlers() {
     HandlerSnapshot snap{};
     snap.stop_custom = is_custom_disposition(SIGTERM) && is_custom_disposition(SIGINT);
     snap.crash_custom = is_custom_disposition(SIGUSR1);
+    snap.corruption_custom = is_custom_disposition(SIGUSR2);
     return snap;
 }
 

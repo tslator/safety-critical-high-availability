@@ -30,6 +30,17 @@ WorkerConfig make_valid() {
 }
 }  // namespace
 
+SAFETY_CRIT_TEST_CASE(WorkersCore, CorruptionHookOptInResolution) {
+    // T-0027 (DEC-0012 #5): production default must stay off; only the CLI
+    // flag or SAFETY_CRIT_CORRUPT_HOOK=1 opt in.
+    SAFETY_CRIT_ASSERT(!corruption_hook_opt_in(false, nullptr));
+    SAFETY_CRIT_ASSERT(!corruption_hook_opt_in(false, "0"));
+    SAFETY_CRIT_ASSERT(!corruption_hook_opt_in(false, ""));
+    SAFETY_CRIT_ASSERT(corruption_hook_opt_in(false, "1"));
+    SAFETY_CRIT_ASSERT(corruption_hook_opt_in(true, nullptr));
+    SAFETY_CRIT_ASSERT(corruption_hook_opt_in(true, "0"));
+}
+
 SAFETY_CRIT_TEST_CASE(WorkersCore, ConfigValidation) {
     SAFETY_CRIT_ASSERT(validate_config(make_valid()));
 

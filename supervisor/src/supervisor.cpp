@@ -294,20 +294,30 @@ bool drain_output_witness(shared_memory::SharedRegion& region, std::size_t logic
     if (witness.last_epoch != 0u && ownership.epoch < witness.last_epoch) {
         return false;
     }
-    const std::uint64_t corruption_before = region.rings[logical_ring].corruption_count();
-    workers::ProcessedData record;
-    while (region.rings[logical_ring].try_pop(record)) {
-        const std::uint64_t sequence = region.rings[logical_ring].consumed() - 1u;
+    auto& ring = region.rings[logical_ring];
+    while (true) {
+        const std::uint64_t corruption_before = ring.corruption_count();
+        workers::ProcessedData record;
+        if (!ring.try_pop(record)) {
+            if (ring.corruption_count() != corruption_before) {
+                // T-0027 (DEC-0012 #5): the ring's skip-and-count path
+                // consumed a corrupted slot. Tolerate and count it; the
+                // sequence continuity invariant carries across the skip.
+                ++witness.corruptions;
+                ++witness.next_sequence;
+                continue;
+            }
+            break;  // empty
+        }
+        const std::uint64_t sequence = ring.consumed() - 1u;
         if (witness.records != 0u && sequence != witness.next_sequence) {
             return false;
         }
         witness.next_sequence = sequence + 1u;
         ++witness.records;
     }
-    const std::uint64_t corruption_after = region.rings[logical_ring].corruption_count();
-    witness.corruptions += corruption_after - corruption_before;
     witness.last_epoch = ownership.epoch;
-    return corruption_after == corruption_before;
+    return true;
 }
 
 StallRecoveryTracker::StallRecoveryTracker(std::chrono::milliseconds grace_period)

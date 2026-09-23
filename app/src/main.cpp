@@ -22,7 +22,7 @@ namespace {
 void print_usage(std::ostream& out) {
     out << "usage: safety-critical-ha --version\n"
         << "       safety-critical-ha worker --id <a|b|c> [--role hot|standby]\n"
-        << "           [--logical-id <a|b|c>] [--generation N]\n"
+        << "           [--logical-id <a|b|c>] [--generation N] [--corrupt-hook]\n"
         << "           [--ticks N] [--tick-interval-ms MS] [--budget-us US]\n"
         << "           [--region NAME] [--pid-dir DIR]\n"
         << "       safety-critical-ha monitor [--interval-ms MS]\n"
@@ -67,7 +67,11 @@ int run_worker_command(int argc, char* argv[]) {
             return true;
         };
         std::string_view value;
-        if (arg == "--id") {
+        if (arg == "--corrupt-hook") {
+            // T-0027 (DEC-0012 #5): valueless opt-in flag for the SIGUSR2
+            // corruption hook (test surface, never for production use).
+            cfg.corrupt_hook = true;
+        } else if (arg == "--id") {
             if (!next_value(value)) {
                 return 2;
             }

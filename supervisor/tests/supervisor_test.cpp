@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <chrono>
+#include <cstdio>
 #include <csignal>
 #include <poll.h>
 #include <unistd.h>
@@ -536,6 +537,29 @@ SAFETY_CRIT_TEST_CASE(Supervisor, DrainsContinuousCrcCheckedOutput) {
     SAFETY_CRIT_ASSERT(safety_crit::supervisor::drain_output_witness(region, 0u, witness));
 }
 
+SAFETY_CRIT_TEST_CASE(Supervisor, WitnessCountsCorruptionSkipsAcrossSequence) {
+    safety_crit::shared_memory::SharedRegion region{};
+    SAFETY_CRIT_ASSERT(safety_crit::shared_memory::initialize(region));
+    safety_crit::workers::ProcessedData first{};
+    first.worker_idx = 0u;
+    first.tick = 4u;
+    safety_crit::workers::ProcessedData poisoned = first;
+    poisoned.tick = 5u;
+    safety_crit::workers::ProcessedData third = first;
+    third.tick = 6u;
+    SAFETY_CRIT_ASSERT(safety_crit::shared_memory::push(region, 0u, first));
+    SAFETY_CRIT_ASSERT(safety_crit::shared_memory::push_with_bad_crc(region, 0u, poisoned));
+    SAFETY_CRIT_ASSERT(safety_crit::shared_memory::push(region, 0u, third));
+
+    safety_crit::supervisor::OutputWitness witness;
+    SAFETY_CRIT_ASSERT(safety_crit::supervisor::drain_output_witness(region, 0u, witness));
+    SAFETY_CRIT_ASSERT(witness.records == 2u);
+    SAFETY_CRIT_ASSERT(witness.corruptions == 1u);
+    // Sequence continuity carries across the skip: 0 delivered, 1 skipped,
+    // 2 delivered -> next expected is 3.
+    SAFETY_CRIT_ASSERT(witness.next_sequence == 3u);
+}
+
 SAFETY_CRIT_TEST_CASE(Supervisor, LaunchesAndReapsTopology) {
     const std::string region_name = "/sc_t0017_" + std::to_string(static_cast<long>(::getpid()));
     const auto pid_dir = std::filesystem::temp_directory_path() /
@@ -606,6 +630,61 @@ SAFETY_CRIT_TEST_CASE(Supervisor, PromotesStandbyAndStartsReplacement) {
     SAFETY_CRIT_ASSERT(ownership.physical_owner == 2u);
     SAFETY_CRIT_ASSERT(ownership.process_generation == 1u);
     region.detach();
+    std::error_code ec;
+    std::filesystem::remove_all(pid_dir, ec);
+    (void)safety_crit::shared_memory::SharedRegionHandle::destroy(region_name.c_str());
+}
+
+SAFETY_CRIT_TEST_CASE(Supervisor, CorruptedPushObservedInOutputWitness) {
+    const std::string region_name = "/sc_t0027c_" + std::to_string(static_cast<long>(::getpid()));
+    const auto pid_dir = std::filesystem::temp_directory_path() /
+                         ("sc_t0027c_pid_" + std::to_string(static_cast<long>(::getpid())));
+    (void)safety_crit::shared_memory::SharedRegionHandle::destroy(region_name.c_str());
+
+    int fds[2] = {-1, -1};
+    SAFETY_CRIT_ASSERT(::pipe(fds) == 0);
+    const pid_t supervisor = ::fork();
+    SAFETY_CRIT_ASSERT(supervisor >= 0);
+    if (supervisor == 0) {
+        ::dup2(fds[1], STDOUT_FILENO);
+        ::close(fds[0]);
+        ::close(fds[1]);
+        ::setenv("SAFETY_CRIT_CORRUPT_HOOK", "1", 1);
+        safety_crit::supervisor::SupervisorConfig config;
+        config.region_name = region_name.c_str();
+        config.pid_dir = pid_dir;
+        config.worker_ticks = 100000;
+        config.runtime_ms = 1200;
+        ::_exit(safety_crit::supervisor::run_supervisor(config));
+    }
+    ::close(fds[1]);
+
+    const long worker = worker_pid(pid_dir, "safety_crit_worker_0.pid",
+                                   std::chrono::milliseconds(1500));
+    SAFETY_CRIT_ASSERT(worker > 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    // Poison exactly one push (SIGUSR2 handler sets the flag once).
+    SAFETY_CRIT_ASSERT(::kill(static_cast<pid_t>(worker), SIGUSR2) == 0);
+
+    int status = 0;
+    SAFETY_CRIT_ASSERT(::waitpid(supervisor, &status, 0) == supervisor);
+    SAFETY_CRIT_ASSERT(WIFEXITED(status));
+    SAFETY_CRIT_ASSERT(WEXITSTATUS(status) == 0);  // no CRC assertion failure
+    std::string output = drain_pipe(fds[0]);
+    ::close(fds[0]);
+
+    const std::size_t at = output.find("a_corruptions=");
+    SAFETY_CRIT_ASSERT(at != std::string::npos);
+    unsigned long long corruptions = 0;
+    SAFETY_CRIT_ASSERT(sscanf(output.c_str() + at, "a_corruptions=%llu", &corruptions) == 1);
+    SAFETY_CRIT_ASSERT(corruptions >= 1ull);
+    // Normal operation resumed: records kept flowing to the witness.
+    const std::size_t rec_at = output.find("a_records=");
+    SAFETY_CRIT_ASSERT(rec_at != std::string::npos);
+    unsigned long long records = 0;
+    SAFETY_CRIT_ASSERT(sscanf(output.c_str() + rec_at, "a_records=%llu", &records) == 1);
+    SAFETY_CRIT_ASSERT(records >= 50ull);
+
     std::error_code ec;
     std::filesystem::remove_all(pid_dir, ec);
     (void)safety_crit::shared_memory::SharedRegionHandle::destroy(region_name.c_str());

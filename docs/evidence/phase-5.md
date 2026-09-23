@@ -155,3 +155,42 @@ here or in `NOTES.md`.
   0/5 iterations over `<100 ms` SLA (Phase 4 baseline preserved).
 - `./scripts/sync-agent-guidance.sh --check` PASS.
 - Hosted CI: [run 35783729868](https://github.com/tslator/safety-critical-high-availability/actions/runs/35783729868) on commit `ba0e05b` (2026-09-22), all ten jobs green.
+
+## T-0027 Result
+
+- Hook: `install_corruption_hook()` in `workers/src/signals.cpp` registers
+  SIGUSR2 -> `SignalState::poison_next_slot` (sig_atomic_t store only).
+  Never installed by the production default; opt-in via worker CLI flag
+  `--corrupt-hook` or `SAFETY_CRIT_CORRUPT_HOOK=1`, resolved by
+  `corruption_hook_opt_in()` (`workers/src/worker_config.cpp`).
+- Poison push path: `LockFreeRingBuffer::try_push_with_bad_crc`
+  (shared claim/commit helper `try_push_impl` with a CRC XOR applied inside
+  the producer's exclusive-ownership window; protocol sound) and region
+  wrapper `push_with_bad_crc`. The worker's push path
+  (`workers/src/worker_entry.cpp`) checks and clears the flag once per tick
+  between ticks, outside the ring hot path; one flag, one poisoned push.
+- Witness policy change: `drain_output_witness` now counts and tolerates the
+  ring's skip-and-count path (sequence continuity carries across the skip)
+  instead of treating a corruption as a supervisor failure; real gaps and
+  ownership failures still reject.
+- TDD red step: ring unit test (`RingBufferCorruption.
+  PoisonPushIsSkippedAndCountedOnce`), signals opt-in test
+  (`WorkersLoop.CorruptionHookIsOptInAndSetsPoisonFlag`, incl. negative
+  test: post-uninstall SIGUSR2 terminates by default disposition), opt-in
+  resolution test (`WorkersCore.CorruptionHookOptInResolution`), witness
+  skip test (`Supervisor.WitnessCountsCorruptionSkipsAcrossSequence`), and
+  integration test (`Supervisor.CorruptedPushObservedInOutputWitness`:
+  SIGUSR2 -> `a_corruptions>=1` in the supervisor shutdown witness, exit 0,
+  records keep flowing) all written first and observed failing.
+  Integration test repeated 5x: 5/5 PASS.
+- CLI acceptance: `worker --id a --ticks 2 --corrupt-hook` exit 0; unknown
+  flag exit 2 (parser rejects typos of the opt-in).
+- GoogleTest 114/114 (109 pre-existing + 5 new); Catch2 114/114.
+- ASan+UBSan x2: 106/106 each. TSan x2 under `setarch --addr-no-randomize`:
+  106/106 each, zero race reports.
+- clang-verify (pinned image, clang-14 preset): 114/114, zero new warnings.
+- Docker build (`--version`) PASS; Compose `up --wait` healthy +
+  `containers/compose/failover-smoke.sh` green 5 consecutive times.
+- `scripts/phase4-failover-timing.sh 5`: min/median/max/avg 84/85/91/85 ms,
+  0/5 iterations over `<100 ms` SLA (Phase 4 baseline preserved).
+- `./scripts/sync-agent-guidance.sh --check` PASS.
