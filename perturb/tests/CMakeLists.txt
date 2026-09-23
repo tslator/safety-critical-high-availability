@@ -1,0 +1,5 @@
+add_executable(perturb_test perturb_test.cpp)
+target_link_libraries(perturb_test PRIVATE safety_crit::perturb)
+safety_crit_apply_warnings(perturb_test)
+safety_crit_apply_sanitizers(perturb_test)
+safety_crit_register_tests(perturb_test)

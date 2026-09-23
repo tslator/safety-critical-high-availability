@@ -8,6 +8,7 @@
 #include "safety_crit/monitors/monitor_config.hpp"
 #include "safety_crit/monitors/monitor_entry.hpp"
 #include "safety_crit/monitors/pidfile_liveness.hpp"
+#include "safety_crit/perturb/harness.hpp"
 #include "safety_crit/supervisor/supervisor.hpp"
 #include "safety_crit/workers/pidfile.hpp"
 #include "safety_crit/workers/worker_config.hpp"
@@ -30,7 +31,10 @@ void print_usage(std::ostream& out) {
         << "           [--pid-dir DIR] [--polls N]\n"
         << "       safety-critical-ha supervisor [--runtime-ms MS]\n"
         << "           [--stall-grace-ms MS] [--region NAME] [--pid-dir DIR]\n"
-        << "           [--ticks N]\n";
+        << "           [--ticks N]\n"
+        << "       safety-critical-ha perturb <crash|stall|recover-stall|corrupt|\n"
+        << "           double-fault|supervisor-kill> --target <pid>\n"
+        << "           [--target2 <pid>] [--out <path>]\n";
 }
 
 bool parse_u64(std::string_view text, std::uint64_t& out) {
@@ -286,6 +290,16 @@ int main(int argc, char* argv[]) {
     }
     if (argc >= 2 && std::string_view(argv[1]) == "supervisor") {
         return run_supervisor_command(argc, argv);
+    }
+    if (argc >= 2 && std::string_view(argv[1]) == "perturb") {
+        // T-0028 (DEC-0012 #7): never-for-production fault-injection harness.
+        safety_crit::perturb::Invocation invocation;
+        std::string error;
+        if (!safety_crit::perturb::parse_invocation(argc - 2, argv + 2, invocation, error)) {
+            std::cerr << error << "\n";
+            return 2;
+        }
+        return safety_crit::perturb::run_invocation(invocation);
     }
     print_usage(std::cerr);
     return 1;

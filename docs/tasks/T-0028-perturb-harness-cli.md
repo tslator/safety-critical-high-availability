@@ -1,6 +1,6 @@
 # T-0028: Phase 5 Perturbation Harness Library and CLI
 
-- Status: Planned
+- Status: Complete
 - Owner: Unassigned
 - Priority: High
 - Depends on: T-0023, T-0024, T-0025, T-0026, T-0027

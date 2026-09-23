@@ -477,3 +477,26 @@ Rule: an epoch bump implies every in-flight producer claim from the prior epoch 
 |`scripts/phase4-failover-timing.sh 5` (regression check on supervisor drain timing)|PASS min/median/max/avg 84/84/90/85 ms, 0/5 over `<100 ms` SLA|
 |`./scripts/sync-agent-guidance.sh --check`|PASS adapters byte-identical|
 |Hosted CI|PASS - run 35768199979 on commit 97ac5f5 (2026-09-22): all ten jobs succeeded|
+
+---
+
+Gate: Phase 5 T-0028 (perturbation harness library and `perturb` CLI)
+Date: 2026-09-22
+Host: x86_64 Linux, `g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0`; clang leg in the pinned `safety-critical-ha:verify-clang-14` image
+
+Deviation (DEC-0012 #7, as planned): the `perturb::` API uses the Phase 2 error idiom `bool fn(..., std::error_code& ec)` because the pinned container's libstdc++ 12 predates `std::expected`; retires when libstdc++ reaches 13. Two test-environment notes: (1) the fork-based signal-delivery tests are compiled out under ASan/TSan (established precedent - the ASan runtime in the forked child hijacks SIGSEGV reporting); (2) `CapturedSink` uses `tmpfile()` rather than `open_memstream()` because glibc `_IO_mem_finish`'s realloc trips a 1-byte LSan false positive under ASan.
+
+|Command / Check|Result|
+|---|---|
+|GoogleTest (plain)|PASS - 123/123 (114 pre-existing + 9 new perturb tests)|
+|Catch2 (plain)|PASS - 123/123|
+|ASan+UBSan GoogleTest|PASS - 109/109 (fork signal tests skipped under sanitizers, precedent)|
+|ASan+UBSan Catch2|PASS - 109/109|
+|TSan GoogleTest (`setarch --addr-no-randomize`)|PASS - 109/109, zero race reports|
+|TSan Catch2 (`setarch --addr-no-randomize`)|PASS - 109/109, zero race reports|
+|clang-verify (pinned image, clang-14 preset)|PASS - 123/123, zero new warnings|
+|CLI smoke (`perturb stall/recover-stall` against live pid, JSON-lines record to `--out`; missing `--target2` and unknown category exit 2)|PASS|
+|Docker build + `--version`|PASS|
+|Compose `up --wait` healthy + `containers/compose/failover-smoke.sh`|PASS 5 consecutive runs|
+|`scripts/phase4-failover-timing.sh 5`|PASS min/median/max/avg 84/85/91/87 ms, 0/5 over `<100 ms` SLA|
+|`./scripts/sync-agent-guidance.sh --check`|PASS adapters byte-identical|

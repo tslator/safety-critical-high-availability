@@ -195,3 +195,33 @@ here or in `NOTES.md`.
   0/5 iterations over `<100 ms` SLA (Phase 4 baseline preserved).
 - `./scripts/sync-agent-guidance.sh --check` PASS.
 - Hosted CI: [run 35800109072](https://github.com/tslator/safety-critical-high-availability/actions/runs/35800109072) on commit `ed0137a` (2026-09-22), all ten jobs green.
+
+## T-0028 Result
+
+- Module: `perturb/` (`safety_crit::perturb`): `harness.hpp` (six actions
+  `crash`/`stall`/`recover_stall`/`corrupt_next_slot`/`double_fault`/
+  `kill_supervisor` using the Phase 2 `bool fn(..., std::error_code&)`
+  idiom per DEC-0012 #7; caller-supplied record sink; failed actions record
+  nothing), `replay_log.hpp` (documented JSON-lines schema, DEC-0012 #8
+  categories), `src/harness.cpp`, `README` (never-for-production per the
+  DEC-0007 destroy() pattern). Root `CMakeLists.txt` adds the module.
+- CLI: `safety-critical-ha perturb <category> --target <pid> [--target2
+  <pid>] [--out <path>]` wired through `app/src/main.cpp`; parse errors
+  exit 2 (verified: missing `--target2` for double-fault, unknown category,
+  non-numeric pid, trailing tokens).
+- Unit tests (written first, TDD red): signal delivery verified per
+  category against throwaway child processes (SIGSEGV death, SIGSTOP/
+  SIGCONT waitpid round-trip, SIGUSR2 handler exit, tight double-SIGKILL,
+  supervisor SIGKILL), exact record-line formatting, argument validation,
+  sink-disabled default. Fork-based tests compile out under sanitizers
+  (established precedent); `CapturedSink` uses `tmpfile()` (glibc
+  `_IO_mem_finish` realloc trips a 1-byte LSan false positive).
+- GoogleTest 123/123 (114 pre-existing + 9 new); Catch2 123/123.
+- ASan+UBSan x2: 109/109 each. TSan x2 under `setarch --addr-no-randomize`:
+  109/109 each, zero race reports.
+- clang-verify (pinned image, clang-14 preset): 123/123, zero new warnings.
+- Docker build (`--version`) PASS; Compose `up --wait` healthy +
+  `containers/compose/failover-smoke.sh` green 5 consecutive times.
+- `scripts/phase4-failover-timing.sh 5`: min/median/max/avg 84/85/91/87 ms,
+  0/5 iterations over `<100 ms` SLA (Phase 4 baseline preserved).
+- `./scripts/sync-agent-guidance.sh --check` PASS.

@@ -10,7 +10,7 @@ target_compile_definitions(safety-critical-ha
 )
 
 target_link_libraries(safety-critical-ha PRIVATE safety_crit::workers safety_crit::monitors
-    safety_crit::supervisor)
+    safety_crit::supervisor safety_crit::perturb)
 
 install(TARGETS safety-critical-ha
     RUNTIME DESTINATION bin

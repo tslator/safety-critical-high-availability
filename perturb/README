@@ -1,0 +1,21 @@
+# Perturbation Harness
+
+NEVER FOR PRODUCTION USE.
+
+This module is the Phase 5 fault-injection surface (DEC-0012 #1/#7): it
+sends fault signals (SIGSEGV, SIGSTOP, SIGKILL, SIGUSR2) at target PIDs and
+records every action as a JSON-lines replay-log entry (schema:
+`include/safety_crit/perturb/replay_log.hpp`). Like the DEC-0007 test-only
+`destroy()` and the DEC-0012 #5 worker corruption hook, it must never be
+reachable from a production control flow; the `safety-critical-ha perturb`
+subcommand and this library exist for the Compose scenario scenarios S1/S2/
+S3/S5/S6 (T-0029) and deterministic replay (T-0030).
+
+Usage:
+
+```
+safety-critical-ha perturb <category> --target <pid> [--target2 <pid>] [--out <path>]
+```
+
+Categories: `crash`, `stall`, `recover-stall`, `corrupt`, `double-fault`,
+`supervisor-kill`. Records append to `--out` (default stdout).
