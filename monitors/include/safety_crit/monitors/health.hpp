@@ -92,11 +92,19 @@ struct Alert {
 // What one poll of one worker observes. `process_alive` is the pidfile
 // pid's liveness (kill(pid, 0)); stale or missing pidfiles are dead
 // (DEC-0010 #2). The monitor never writes the region, so these values
-// never race with a writer of the same words.
+// never race with a writer of the same words. Note that the pidfile is
+// per slot and is recycled by a replacement process, so liveness cannot
+// attribute a status word to a process generation (T-0032): the rules
+// below avoid relying on that attribution.
 struct WorkerObservation {
     std::uint64_t status{0};
     std::uint64_t ring_tail{0};
     bool process_alive{false};
+    // T-0032: epoch of the logical ring the tail was read from. A change under
+    // a live episode is a failover handoff (transfer_ownership bumps the
+    // epoch), which re-baselines the stall window instead of reporting the
+    // frozen pre-handoff tail as a stall.
+    std::uint64_t ring_epoch{0};
 };
 
 // Per-worker state the health algorithm carries between polls. The caller
@@ -112,6 +120,8 @@ struct WorkerTrack {
     bool stalled_alerted{false};    // stall latched until tail advances
     bool crash_alerted{false};      // crash latched until process returns
     bool overrun_reported{false};   // OVERRUN bit seen since last clear
+    std::uint64_t episode_epoch{0};     // ring epoch the RUNNING episode began on
+    bool awaiting_first_commit{false};  // episode/ring change, no commit seen yet
 };
 
 // Advances one worker's track by one observation, appending zero or one
@@ -129,6 +139,13 @@ struct WorkerTrack {
 //    than cfg.stall_threshold latches kWorkerStalled.
 //  - Alive + IDLE (or transition to not-RUNNING): kWorkerIdle once. A
 //    clean exit (IDLE + dead) is an idle edge, never a crash.
+//  - First commit of an episode (T-0032): a fresh, promoted, or restarted
+//    owner is announced RUNNING before it can have committed anything. Until
+//    the first tail advance of the episode (or of a handoff epoch change,
+//    which re-baselines the window silently), the stall bound is
+//    cfg.handoff_grace rather than cfg.stall_threshold; after it, the ordinary
+//    bound resumes. Detection stays bounded: an owner that never commits is
+//    still reported, just on the longer bound.
 //  - OVERRUN bit observed: kWorkerOverrun once until the bit is cleared
 //    (workers never clear it -- DEC-0009 #4 -- so in practice once per
 //    episode).
@@ -143,6 +160,10 @@ void observe_worker(WorkerTrack<TimePoint>& track, const MonitorConfig& cfg,
     if (!obs.process_alive && (running || crashed_bit)) {
         // Crash (or already-reported-crash) dominates every other edge.
         track.stalled_alerted = false;
+        // T-0032: whatever process answers for this slot next is a new owner
+        // taking the ring over, so its first episode runs on the handoff
+        // bound rather than stall_threshold.
+        track.awaiting_first_commit = true;
         if (!track.crash_alerted) {
             track.crash_alerted = true;
             track.running_announced = false;
@@ -177,21 +198,43 @@ void observe_worker(WorkerTrack<TimePoint>& track, const MonitorConfig& cfg,
         track.stalled_alerted = false;
         track.last_advance = now;
         track.last_tail = obs.ring_tail;
+        track.episode_epoch = obs.ring_epoch;
+        // T-0032: a new episode -- fresh, promoted, or restarted -- cannot
+        // have committed on the observed ring yet, so its first commit is
+        // measured against the handoff bound. Arming stall_threshold here is
+        // the handoff blind spot that SIGKILLed healthy workers.
+        track.awaiting_first_commit = true;
         track.state = HealthState::kRunning;
         *out++ = Alert{track.worker, AlertKind::kWorkerRunning};
         return;
     }
 
+    // T-0032: the logical ring moved while this episode was live
+    // (transfer_ownership bumps the epoch on every handoff). Re-baseline the
+    // stall window on the new ring and hold the handoff bound until its first
+    // commit; no alert is emitted for the handoff itself.
+    if (obs.ring_epoch != track.episode_epoch) {
+        track.episode_epoch = obs.ring_epoch;
+        track.awaiting_first_commit = true;
+        track.last_tail = obs.ring_tail;
+        track.last_advance = now;
+        track.stalled_alerted = false;
+    }
+
     if (obs.ring_tail != track.last_tail) {
         track.last_tail = obs.ring_tail;
         track.last_advance = now;
+        track.awaiting_first_commit = false;  // first commit: normal bound again
         if (track.stalled_alerted) {
             track.stalled_alerted = false;
             track.state = HealthState::kRunning;
             *out++ = Alert{track.worker, AlertKind::kWorkerRecovered};
             return;
         }
-    } else if (!track.stalled_alerted && now - track.last_advance > cfg.stall_threshold) {
+    } else if (!track.stalled_alerted &&
+               now - track.last_advance >
+                   (track.awaiting_first_commit ? cfg.handoff_grace
+                                                : cfg.stall_threshold)) {
         track.stalled_alerted = true;
         track.state = HealthState::kStalled;
         *out++ = Alert{track.worker, AlertKind::kWorkerStalled};
@@ -242,6 +285,10 @@ inline WorkerObservation poll_worker(const safety_crit::shared_memory::SharedReg
     const auto owned = owned_logical_ring(region, worker_idx);
     const std::size_t tail_index = owned.value_or(worker_idx);
     obs.ring_tail = region.rings[tail_index].tail_.load(std::memory_order_acquire);
+    safety_crit::shared_memory::OwnershipToken token;
+    if (safety_crit::shared_memory::read_ownership(region, tail_index, token)) {
+        obs.ring_epoch = token.epoch;
+    }
     obs.process_alive = process_alive;
     return obs;
 }

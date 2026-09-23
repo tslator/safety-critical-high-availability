@@ -10,6 +10,11 @@
 #
 # Owns the full stack lifecycle: up -> S1 -> shutdown witness -> down ->
 # up -> replay -> shutdown witness -> down. Exits 0 on success.
+#
+# T-0032: both phases settle for longer than the monitor's failover handoff
+# grace before snapshotting (so trailing timing-bound edges land identically),
+# and the raw supervisor logs are dumped on any failure -- a bare event diff is
+# undiagnosable from a CI log.
 set -Eeuo pipefail
 cd "$(dirname "$0")/../../.."
 # shellcheck source=common.sh
@@ -17,6 +22,37 @@ source containers/compose/scenarios/common.sh
 
 REPLAY="${1:-$(mktemp /tmp/s1_replay.XXXXXX.jsonl)}"
 RECORDS_TOLERANCE=200
+# T-0032: settle longer than the monitor's failover handoff grace before
+# snapshotting, so trailing timing-bound edges are ordered identically in both
+# phases instead of racing the snapshot.
+S1R_SETTLE_SECONDS="${S1R_SETTLE_SECONDS:-1.5}"
+LOG_ORIGINAL="$(mktemp /tmp/s1r_log_original.XXXXXX)"
+LOG_REPLAY="$(mktemp /tmp/s1r_log_replayed.XXXXXX)"
+
+# A bare diff of two event lists is undiagnosable from a CI log (hosted run
+# 35865376613 showed only "1a2"): keep the raw supervisor logs and dump them
+# whenever the scenario exits non-zero.
+dump_diagnostics() {
+  local status=$?
+  if [ "${status}" -eq 0 ]; then
+    rm -f "${LOG_ORIGINAL}" "${LOG_REPLAY}"
+    return 0
+  fi
+  printf '!! S1R failed (exit %d); supervisor logs follow\n' "${status}"
+  local file
+  for file in "${LOG_ORIGINAL}" "${LOG_REPLAY}"; do
+    [ -s "${file}" ] || continue
+    printf '----- %s -----\n' "${file}"
+    cat "${file}"
+  done
+  for file in /tmp/s1r_events_*.txt /tmp/s1r_ownership_*.txt /tmp/s1r_witness_*.txt; do
+    [ -s "${file}" ] || continue
+    printf '----- %s -----\n' "${file}"
+    cat "${file}"
+  done
+}
+
+trap dump_diagnostics EXIT
 
 # Ordered supervisor event categories (timestamps/counts stripped; the
 # categories themselves must match exactly, in order).
@@ -48,10 +84,12 @@ run_original_phase() {
   perturb crash --target "${hot_a}" | tee -a "${REPLAY}" >/dev/null
   wait_new_live_pid 0 "${hot_a}" 10
   wait_healthy 20
+  sleep "${S1R_SETTLE_SECONDS}"
   # Snapshots BEFORE shutdown: the restart policy relaunches the supervisor
   # against a fresh /dev/shm region, which would reset ownership tokens.
   event_categories > /tmp/s1r_events_original.txt
   ownership_snapshot > /tmp/s1r_ownership_original.txt
+  supervisor_log > "${LOG_ORIGINAL}" 2>/dev/null || true
   shutdown_and_witness
   witness_line > /tmp/s1r_witness_original.txt
 }
@@ -71,8 +109,10 @@ run_replay_phase() {
     --target-remap "${remap}"
   wait_new_live_pid 0 "${hot_a}" 10
   wait_healthy 20
+  sleep "${S1R_SETTLE_SECONDS}"
   event_categories > /tmp/s1r_events_replayed.txt
   ownership_snapshot > /tmp/s1r_ownership_replayed.txt
+  supervisor_log > "${LOG_REPLAY}" 2>/dev/null || true
   shutdown_and_witness
   witness_line > /tmp/s1r_witness_replayed.txt
 }

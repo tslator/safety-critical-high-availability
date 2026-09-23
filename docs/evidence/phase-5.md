@@ -327,3 +327,56 @@ here or in `NOTES.md`.
   build time; CI already wraps configure/build/test), clang-verify
   128/128 zero new warnings.
 - Hosted CI: [run 35864589526](https://github.com/tslator/safety-critical-high-availability/actions/runs/35864589526) on commit `e2ca0a0` (2026-09-23), all jobs green (Compose job includes the five perturbation scenarios plus the S1 deterministic replay).
+
+## T-0032 Result
+
+- Root cause of the S1-R CI flake (hosted run 35865376613, `stall recovered`
+  appearing only in the replayed phase): during a crash failover the monitor
+  cannot attribute a slot's status cell or pidfile to a process generation, so
+  it never reports `worker_crashed` (the replacement's IDLE store and recycled
+  pidfile mask it) and can report `worker_stalled` for the dead slot; nothing
+  advanced the supervisor state, so the T-0025 stall path stayed armed against
+  the processes recovering the ring — logging a spurious `stall recovered` or,
+  when the 200 ms escalation grace expired first, SIGKILLing the replacement.
+  Analysis: [D-2026-09-23-001](../reviews/2026-09-23-s1r-handoff-stall-blindspot.md),
+  decision: [DEC-0013](../decisions/0013-handoff-visibility-and-stall-bounding.md).
+- Monitor: stall detection arms on the first observed commit of a `RUNNING`
+  episode; until then (and after an epoch change under a live episode, which
+  re-baselines the window silently) the bound is the new
+  `MonitorConfig::handoff_grace` (default 750 ms) instead of
+  `stall_threshold` (100 ms). Validation rejects a non-positive grace or one
+  shorter than `stall_threshold`. `poll_worker()` now reports the epoch of the
+  logical ring it read the tail from.
+- Supervisor: reap of a crashed child advances the state to
+  `kFailoverDetected` (no longer dependent on the maskable monitor alert) and
+  opens a handoff window that runs until the first post-failover commit, capped
+  by the new `SupervisorConfig::handoff_grace_ms` (default 750 ms). Inside the
+  window stall alerts are still forwarded but do not arm SIGCONT/SIGKILL; after
+  it, `kFailoverDetected` is admitted by the stall handler so genuine
+  post-failover stalls still recover. Every reaped crash opens the window
+  (`reap_crashed_workers()` now reports whether it reaped one this iteration),
+  so a double fault is not left unshielded.
+- Scenario hygiene: `s1_replay.sh` settles for 1.5 s (longer than the 750 ms
+  handoff grace) between the fault and each phase snapshot, and dumps raw
+  supervisor logs plus witness snapshots on any non-zero exit.
+- Regression evidence: `Supervisor.CrashRecordsFailoverWithoutStallArtifacts`
+  built against the pre-fix sources fails 5/5 (no `kFailoverDetected` recorded;
+  stall artifacts present) and passes 10/10 after the fix. Four new monitor
+  health cases pin the handoff bound (promoted owner quiet, epoch re-baseline,
+  never-committing owner still reported on the longer bound, post-crash episode
+  on the longer bound); one new supervisor case proves a stall injected after
+  the window still recovers. T-0025 stall tests unchanged and green.
+- Reference host: GoogleTest 134/134, Catch2 134/134; CI sanitizers matrix
+  mirrored locally (ASan+UBSan and TSan, both frameworks) 118/118 each with
+  zero reports, re-run after the final refactor. Full local
+  `docker-compose-smoke` sequence green: base failover smoke PASS,
+  S1/S2/S3/S5/S6 PASS, S1-R PASS 3x unconstrained and 8x under 16-way CPU
+  contention (with contention, `a_records` deltas stayed well inside the 200
+  tolerance and no stall artifacts appeared in either phase).
+- Residual risk (deferred, DEC-0013): the status word and pidfile of a slot
+  cannot be attributed to a process generation, so a crash can still be
+  misread as a `worker_idle` edge (the monitor's `worker_crashed` alert is
+  therefore still not asserted by S1/S1-R, as documented since T-0029). The
+  root fix needs a generation-stamped status word and its own decision.
+  `s1_crash.sh`'s hard < 100 ms recovery budget is the same runner-sensitivity
+  class and is left for T-0031.

@@ -9,7 +9,13 @@ bool validate_config(const MonitorConfig& config) {
     if (config.stall_threshold <= std::chrono::milliseconds::zero()) {
         return false;
     }
-    return config.stall_threshold >= config.poll_interval;
+    if (config.stall_threshold < config.poll_interval) {
+        return false;
+    }
+    if (config.handoff_grace <= std::chrono::milliseconds::zero()) {
+        return false;
+    }
+    return config.handoff_grace >= config.stall_threshold;
 }
 
 }  // namespace safety_crit::monitors

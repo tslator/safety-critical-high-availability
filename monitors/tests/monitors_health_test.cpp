@@ -53,6 +53,16 @@ Alerts poll(WorkerTrack<TimePoint>& track, const MonitorConfig& cfg, std::uint64
     return out;
 }
 
+// T-0032 variant: same poll with an explicit logical-ring identity, so tests
+// can model a failover handoff (borrowed ring / changed epoch).
+Alerts poll(WorkerTrack<TimePoint>& track, const MonitorConfig& cfg, std::uint64_t status,
+            std::uint64_t tail, bool alive, std::uint64_t ring_epoch) {
+    Alerts out;
+    observe_worker(track, cfg, WorkerObservation{status, tail, alive, ring_epoch},
+                   FakeClock::now(), std::back_inserter(out));
+    return out;
+}
+
 void expect_alert(const Alerts& alerts, AlertKind kind) {
     SAFETY_CRIT_ASSERT(alerts.size() == 1u);
     SAFETY_CRIT_ASSERT(alerts[0].kind == kind);
@@ -87,6 +97,20 @@ SAFETY_CRIT_TEST_CASE(MonitorsConfig, ConfigValidation) {
     // Threshold == interval is observable on the first interval boundary.
     bad.stall_threshold = std::chrono::milliseconds(10);
     SAFETY_CRIT_ASSERT(validate_config(bad));
+
+    // T-0032: the handoff grace defaults above the failover SLA and must not
+    // be shorter than the stall threshold it temporarily replaces.
+    MonitorConfig handoff{};
+    SAFETY_CRIT_ASSERT(handoff.handoff_grace == std::chrono::milliseconds(750));
+    SAFETY_CRIT_ASSERT(handoff.handoff_grace > handoff.stall_threshold);
+    handoff.handoff_grace = std::chrono::milliseconds::zero();
+    SAFETY_CRIT_ASSERT(!validate_config(handoff));
+    handoff.handoff_grace = std::chrono::milliseconds(-5);
+    SAFETY_CRIT_ASSERT(!validate_config(handoff));
+    handoff.handoff_grace = std::chrono::milliseconds(99);
+    SAFETY_CRIT_ASSERT(!validate_config(handoff));
+    handoff.handoff_grace = std::chrono::milliseconds(100);
+    SAFETY_CRIT_ASSERT(validate_config(handoff));
 }
 
 SAFETY_CRIT_TEST_CASE(MonitorsHealth, AlertVocabulary) {
@@ -243,4 +267,134 @@ SAFETY_CRIT_TEST_CASE(MonitorsHealth, CrashDominatesLowerPriorityEdges) {
     expect_alert(poll(track, cfg, over, 10, false), AlertKind::kWorkerCrashed);
     expect_alert(poll(track, cfg, over, 10, true), AlertKind::kWorkerRunning);
     expect_alert(poll(track, cfg, over, 11, true), AlertKind::kWorkerOverrun);
+}
+
+// T-0032: failover handoff blind spot. A promoted owner is announced RUNNING
+// at ownership transfer -- before it can commit on its new logical ring. The
+// first post-failover commit is timing bound (18-96 ms measured locally, more
+// on a loaded CI runner), so arming stall_threshold at the handoff edge
+// reported a stall that never happened (CI run 35865376613: the false stall
+// reached the supervisor, whose bounded SIGCONT path then logged
+// "stall recovered" and, when the grace expired, SIGKILLed the worker that
+// was in the middle of recovering the ring).
+SAFETY_CRIT_TEST_CASE(MonitorsHealth, PromotedOwnerHandoffIsNotReportedAsStall) {
+    FakeClock::reset();
+    const MonitorConfig cfg = make_cfg();  // stall 100 ms, handoff grace 750 ms
+    WorkerTrack<TimePoint> track;
+    track.worker = 2;  // the standby physical worker
+    const std::uint64_t run = to_bits(WorkerStatusFlag::kRunning);
+    const std::uint64_t idle = to_bits(WorkerStatusFlag::kIdle);
+
+    // Boot: standby, IDLE on its home index.
+    expect_alert(poll(track, cfg, idle, 0, true, 1), AlertKind::kWorkerIdle);
+
+    // The hot worker dies and the supervisor transfers logical ring 0 (epoch
+    // 5, a borrowed ring) onto this worker: RUNNING at the transfer edge,
+    // tail still frozen at the pre-crash value.
+    expect_alert(poll(track, cfg, run, 41, true, 5), AlertKind::kWorkerRunning);
+
+    // Nothing committed yet: every poll beyond stall_threshold stays quiet
+    // until the handoff grace expires.
+    for (int ms = 10; ms <= 500; ms += 10) {
+        FakeClock::advance(std::chrono::milliseconds(10));
+        expect_quiet(poll(track, cfg, run, 41, true, 5));
+    }
+
+    // First commit lands: the handoff is over and the ordinary threshold
+    // resumes from this point.
+    FakeClock::advance(std::chrono::milliseconds(10));
+    expect_quiet(poll(track, cfg, run, 42, true, 5));
+    for (std::uint64_t tail = 43; tail <= 51; ++tail) {
+        FakeClock::advance(std::chrono::milliseconds(10));
+        expect_quiet(poll(track, cfg, run, tail, true, 5));
+    }
+
+    // A genuine stall after the handoff is still reported on stall_threshold:
+    // the grace is a window, not a permanent exemption.
+    for (int i = 0; i < 10; ++i) {
+        FakeClock::advance(std::chrono::milliseconds(10));
+        expect_quiet(poll(track, cfg, run, 51, true, 5));
+    }
+    FakeClock::advance(std::chrono::milliseconds(10));  // delta 110 ms
+    expect_alert(poll(track, cfg, run, 51, true, 5), AlertKind::kWorkerStalled);
+}
+
+SAFETY_CRIT_TEST_CASE(MonitorsHealth, OwnershipEpochChangeRebaselinesStallWindow) {
+    FakeClock::reset();
+    const MonitorConfig cfg = make_cfg();
+    WorkerTrack<TimePoint> track;
+    track.worker = 0;
+    const std::uint64_t run = to_bits(WorkerStatusFlag::kRunning);
+
+    // Home ring, epoch 3, committing.
+    expect_alert(poll(track, cfg, run, 10, true, 3), AlertKind::kWorkerRunning);
+    FakeClock::advance(std::chrono::milliseconds(10));
+    expect_quiet(poll(track, cfg, run, 11, true, 3));
+
+    // Frozen 90 ms: inside stall_threshold, quiet.
+    FakeClock::advance(std::chrono::milliseconds(90));
+    expect_quiet(poll(track, cfg, run, 11, true, 3));
+
+    // Epoch bump (transfer_ownership bumps the epoch on every handoff): the
+    // window is re-based on the handoff edge, silently -- no alert is emitted
+    // for the handoff itself.
+    FakeClock::advance(std::chrono::milliseconds(10));  // t=110
+    expect_quiet(poll(track, cfg, run, 11, true, 9));
+    for (int i = 0; i < 3; ++i) {
+        FakeClock::advance(std::chrono::milliseconds(10));  // delta 140 from the freeze
+        expect_quiet(poll(track, cfg, run, 11, true, 9));
+    }
+
+    // Commit lands, then a real stall fires on the ordinary threshold.
+    FakeClock::advance(std::chrono::milliseconds(10));
+    expect_quiet(poll(track, cfg, run, 12, true, 9));
+    for (int i = 0; i < 10; ++i) {
+        FakeClock::advance(std::chrono::milliseconds(10));
+        expect_quiet(poll(track, cfg, run, 12, true, 9));
+    }
+    FakeClock::advance(std::chrono::milliseconds(10));
+    expect_alert(poll(track, cfg, run, 12, true, 9), AlertKind::kWorkerStalled);
+}
+
+SAFETY_CRIT_TEST_CASE(MonitorsHealth, PromotedOwnerThatNeverCommitsStillAlerts) {
+    FakeClock::reset();
+    const MonitorConfig cfg = make_cfg();
+    WorkerTrack<TimePoint> track;
+    track.worker = 2;
+    const std::uint64_t run = to_bits(WorkerStatusFlag::kRunning);
+
+    // Promoted onto a borrowed ring and never produces a record: detection is
+    // delayed to the handoff bound, not lost (bounded detection, AGENTS.md #5).
+    expect_alert(poll(track, cfg, run, 7, true, 5), AlertKind::kWorkerRunning);
+    for (int i = 0; i < 75; ++i) {
+        FakeClock::advance(std::chrono::milliseconds(10));
+        expect_quiet(poll(track, cfg, run, 7, true, 5));
+    }
+    FakeClock::advance(std::chrono::milliseconds(10));  // 760 ms since the handoff edge
+    expect_alert(poll(track, cfg, run, 7, true, 5), AlertKind::kWorkerStalled);
+}
+
+SAFETY_CRIT_TEST_CASE(MonitorsHealth, CrashRearmsHandoffBoundForNextOwner) {
+    FakeClock::reset();
+    const MonitorConfig cfg = make_cfg();
+    WorkerTrack<TimePoint> track;
+    track.worker = 0;
+    const std::uint64_t run = to_bits(WorkerStatusFlag::kRunning);
+
+    // Hot on its home ring, then SIGSEGV: status word keeps RUNNING, liveness
+    // detects the death.
+    expect_alert(poll(track, cfg, run, 10, true, 3), AlertKind::kWorkerRunning);
+    expect_alert(poll(track, cfg, run, 10, false, 3), AlertKind::kWorkerCrashed);
+
+    // The replacement process answers on the same status slot (it stores its
+    // own status word, which is why the crash edge can be masked in the field
+    // -- T-0032). Its first episode runs on the handoff bound even though it
+    // owns its home ring, because the ring moved over to it.
+    expect_alert(poll(track, cfg, run, 10, true, 3), AlertKind::kWorkerRunning);
+    for (int i = 0; i < 11; ++i) {
+        FakeClock::advance(std::chrono::milliseconds(10));  // delta 110 ms only
+        expect_quiet(poll(track, cfg, run, 10, true, 3));
+    }
+    FakeClock::advance(std::chrono::milliseconds(650));  // beyond the handoff grace
+    expect_alert(poll(track, cfg, run, 10, true, 3), AlertKind::kWorkerStalled);
 }

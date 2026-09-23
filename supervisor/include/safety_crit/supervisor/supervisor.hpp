@@ -52,6 +52,12 @@ struct SupervisorConfig {
     // T-0025 (DEC-0012 #3): grace between the bounded SIGCONT and SIGKILL
     // escalation for a stalled ring, exposed via --stall-grace-ms.
     std::uint64_t stall_grace_ms{200};
+    // T-0032: bounded window after a reap-observed crash during which the
+    // promoted owner is expected to take its ring over. Monitor stall alerts
+    // arriving in this window describe the handoff, not a wedged worker, and
+    // must not arm the SIGCONT/SIGKILL path (the grace also bounds the window
+    // in the unlikely case the first post-failover record never arrives).
+    std::uint64_t handoff_grace_ms{750};
 };
 
 enum class SupervisorState : std::uint8_t {

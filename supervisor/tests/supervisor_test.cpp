@@ -689,3 +689,131 @@ SAFETY_CRIT_TEST_CASE(Supervisor, CorruptedPushObservedInOutputWitness) {
     std::filesystem::remove_all(pid_dir, ec);
     (void)safety_crit::shared_memory::SharedRegionHandle::destroy(region_name.c_str());
 }
+
+// T-0032 regression (hosted CI run 35865376613). Crashing the hot worker used
+// to leave the supervisor in kRunning for the whole failover handoff: the
+// monitor never reports the crash (the replacement process stores its own IDLE
+// status word into the crashed slot before the monitor's next poll, masking
+// the crash edge), so nothing advanced the state, and a monitor stall alert --
+// armed on the promoted owner before it could commit anything on its new ring
+// -- drove the bounded SIGCONT path. Depending on whether the first
+// post-failover commit landed before that 100 ms window expired, the run
+// either logged a spurious "stall recovered" (breaking the S1-R determinism
+// contract) or escalated to SIGKILL against the worker recovering the ring.
+SAFETY_CRIT_TEST_CASE(Supervisor, CrashRecordsFailoverWithoutStallArtifacts) {
+    const std::string region_name = "/sc_t0032c_" + std::to_string(static_cast<long>(::getpid()));
+    const auto pid_dir = std::filesystem::temp_directory_path() /
+                         ("sc_t0032c_pid_" + std::to_string(static_cast<long>(::getpid())));
+    (void)safety_crit::shared_memory::SharedRegionHandle::destroy(region_name.c_str());
+
+    int fds[2] = {-1, -1};
+    SAFETY_CRIT_ASSERT(::pipe(fds) == 0);
+    const pid_t supervisor = ::fork();
+    SAFETY_CRIT_ASSERT(supervisor >= 0);
+    if (supervisor == 0) {
+        ::dup2(fds[1], STDOUT_FILENO);
+        ::close(fds[0]);
+        ::close(fds[1]);
+        safety_crit::supervisor::SupervisorConfig config;
+        config.region_name = region_name.c_str();
+        config.pid_dir = pid_dir;
+        config.worker_ticks = 100000;
+        config.runtime_ms = 2500;
+        ::_exit(safety_crit::supervisor::run_supervisor(config));
+    }
+    ::close(fds[1]);
+
+    const long hot = worker_pid(pid_dir, "safety_crit_worker_0.pid",
+                                std::chrono::milliseconds(1500));
+    SAFETY_CRIT_ASSERT(hot > 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    // SIGKILL (the perturb harness' fallback, DEC-0012 #1): the status word
+    // stays RUNNING and the slot's pidfile is recycled by the replacement, so
+    // this is the hardest case for the monitor's slot attribution.
+    SAFETY_CRIT_ASSERT(::kill(static_cast<pid_t>(hot), SIGKILL) == 0);
+
+    std::string output;
+    SAFETY_CRIT_ASSERT(wait_for_output(fds[0], output, "first post-failover record observed",
+                                       std::chrono::milliseconds(2000)));
+
+    int status = 0;
+    SAFETY_CRIT_ASSERT(::waitpid(supervisor, &status, 0) == supervisor);
+    SAFETY_CRIT_ASSERT(WIFEXITED(status));
+    SAFETY_CRIT_ASSERT(WEXITSTATUS(status) == 0);
+    output += drain_pipe(fds[0]);
+    ::close(fds[0]);
+
+    // Failover is recorded from reap, not from the (masked) monitor alert.
+    SAFETY_CRIT_ASSERT(output.find("supervisor: shutdown state=4") != std::string::npos);
+    // No stall artifacts of any kind during the handoff.
+    SAFETY_CRIT_ASSERT(output.find("stall recovered") == std::string::npos);
+    SAFETY_CRIT_ASSERT(output.find("stall escalation") == std::string::npos);
+    SAFETY_CRIT_ASSERT(output.find("\"event\":\"worker_stalled\"") == std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove_all(pid_dir, ec);
+    (void)safety_crit::shared_memory::SharedRegionHandle::destroy(region_name.c_str());
+}
+
+// T-0032: the handoff window is a window, not a permanent stall exemption.
+// With the window bounded to zero, a stall injected on the promoted owner
+// after it has committed still arms the bounded SIGCONT recovery path, i.e.
+// kFailoverDetected is admitted by the stall handler once the handoff is over.
+SAFETY_CRIT_TEST_CASE(Supervisor, StallAfterHandoffWindowStillRecovers) {
+    const std::string region_name = "/sc_t0032s_" + std::to_string(static_cast<long>(::getpid()));
+    const auto pid_dir = std::filesystem::temp_directory_path() /
+                         ("sc_t0032s_pid_" + std::to_string(static_cast<long>(::getpid())));
+    (void)safety_crit::shared_memory::SharedRegionHandle::destroy(region_name.c_str());
+
+    int fds[2] = {-1, -1};
+    SAFETY_CRIT_ASSERT(::pipe(fds) == 0);
+    const pid_t supervisor = ::fork();
+    SAFETY_CRIT_ASSERT(supervisor >= 0);
+    if (supervisor == 0) {
+        ::dup2(fds[1], STDOUT_FILENO);
+        ::close(fds[0]);
+        ::close(fds[1]);
+        safety_crit::supervisor::SupervisorConfig config;
+        config.region_name = region_name.c_str();
+        config.pid_dir = pid_dir;
+        config.worker_ticks = 100000;
+        config.runtime_ms = 4000;
+        config.handoff_grace_ms = 0;
+        ::_exit(safety_crit::supervisor::run_supervisor(config));
+    }
+    ::close(fds[1]);
+
+    const long hot = worker_pid(pid_dir, "safety_crit_worker_0.pid",
+                                std::chrono::milliseconds(1500));
+    SAFETY_CRIT_ASSERT(hot > 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    // SIGKILL (the perturb harness' fallback, DEC-0012 #1): the status word
+    // stays RUNNING and the slot's pidfile is recycled by the replacement, so
+    // this is the hardest case for the monitor's slot attribution.
+    SAFETY_CRIT_ASSERT(::kill(static_cast<pid_t>(hot), SIGKILL) == 0);
+
+    std::string output;
+    SAFETY_CRIT_ASSERT(wait_for_output(fds[0], output, "first post-failover record observed",
+                                       std::chrono::milliseconds(2000)));
+
+    // Freeze the promoted owner (physical 2): its ring tail stops, the monitor
+    // reports a real stall, and the supervisor recovers it with SIGCONT.
+    const long promoted = worker_pid(pid_dir, "safety_crit_worker_2.pid",
+                                     std::chrono::milliseconds(1500));
+    SAFETY_CRIT_ASSERT(promoted > 0);
+    SAFETY_CRIT_ASSERT(::kill(static_cast<pid_t>(promoted), SIGSTOP) == 0);
+    SAFETY_CRIT_ASSERT(wait_for_output(fds[0], output,
+                                       "supervisor: stall recovered for physical 2 at epoch",
+                                       std::chrono::milliseconds(2000)));
+
+    (void)::kill(static_cast<pid_t>(promoted), SIGCONT);
+    int status = 0;
+    SAFETY_CRIT_ASSERT(::waitpid(supervisor, &status, 0) == supervisor);
+    SAFETY_CRIT_ASSERT(WIFEXITED(status));
+    (void)::kill(static_cast<pid_t>(promoted), SIGCONT);
+    ::close(fds[0]);
+
+    std::error_code ec;
+    std::filesystem::remove_all(pid_dir, ec);
+    (void)safety_crit::shared_memory::SharedRegionHandle::destroy(region_name.c_str());
+}

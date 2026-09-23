@@ -229,12 +229,17 @@ bool recover_worker_crash(shared_memory::SharedRegion& region,
     return true;
 }
 
+// Returns false only when recovery itself failed (failsafe). `crash_reaped`
+// reports whether THIS iteration reaped a crashed child, which is what opens
+// the T-0032 handoff window -- the timing witness below stays gated on the
+// first crash of the process lifetime.
 bool reap_crashed_workers(shared_memory::SharedRegion& region,
                           std::vector<Child>& children,
                           const char* region_name, const char* pid_dir,
                           std::uint32_t& next_generation,
                           std::chrono::steady_clock::time_point* crash_observed,
-                          std::array<bool, shared_memory::kMaxWorkers>& degraded_rings) {
+                          std::array<bool, shared_memory::kMaxWorkers>& degraded_rings,
+                          bool* crash_reaped = nullptr) {
     for (std::size_t index = 0; index < children.size(); ++index) {
         Child& child = children[index];
         if (!child.worker || child.pid <= 0 || child.handled) {
@@ -248,6 +253,9 @@ bool reap_crashed_workers(shared_memory::SharedRegion& region,
         if (WIFSIGNALED(status) || (WIFEXITED(status) && WEXITSTATUS(status) != 0)) {
             if (crash_observed != nullptr && crash_observed->time_since_epoch().count() == 0) {
                 *crash_observed = std::chrono::steady_clock::now();
+            }
+            if (crash_reaped != nullptr) {
+                *crash_reaped = true;
             }
             if (!recover_worker_crash(region, children, child.physical_worker,
                                        region_name, pid_dir, next_generation,
@@ -458,6 +466,15 @@ int run_supervisor(const SupervisorConfig& config) {
     // is emitted once on stdout for phase evidence.
     std::chrono::steady_clock::time_point failover_detected{};
     bool failover_timing_emitted = false;
+    // T-0032 (failover handoff blind spot): opened by the iteration that
+    // reaps the crash, closed by the first post-failover commit (or by
+    // config.handoff_grace_ms, so the window is bounded even if the ring
+    // never commits again). While open, the promoted owner is by definition
+    // not yet producing records: monitor stall alerts in this window are
+    // handoff artifacts and arming SIGCONT/SIGKILL from them would kill the
+    // worker that is in the middle of recovering the ring.
+    bool post_failover_handoff_open = false;
+    std::chrono::steady_clock::time_point post_failover_handoff_deadline{};
     char buffer[512];
     state = SupervisorState::kRunning;
     bool recovery_failed = false;
@@ -465,9 +482,10 @@ int run_supervisor(const SupervisorConfig& config) {
     std::array<bool, shared_memory::kMaxWorkers> degraded_rings{};
     while (!g_stop && !recovery_failed && std::chrono::steady_clock::now() < deadline) {
         const bool failover_previously_detected = failover_detected.time_since_epoch().count() != 0;
+        bool crash_reaped = false;
         if (!reap_crashed_workers(*region.get(), children, config.region_name,
-                                  config.pid_dir.c_str(), next_generation,
-                                  &failover_detected, degraded_rings)) {
+                                  config.pid_dir.c_str(), next_generation, &failover_detected,
+                                  degraded_rings, &crash_reaped)) {
             state = SupervisorState::kFailsafe;
             recovery_failed = true;
             break;
@@ -491,9 +509,25 @@ int run_supervisor(const SupervisorConfig& config) {
         // Snapshot the drain position on the same iteration that reap moved
         // ownership so first-post-failover only counts records committed
         // AFTER the crash (A's residual drain here is excluded).
+        // T-0032: reap is the authoritative failover trigger (the monitor
+        // cannot report it -- the replacement process stores its own IDLE
+        // status into the crashed slot's status word before the monitor's next
+        // poll, so the crash edge is masked). Record it here rather than
+        // waiting for an alert that never arrives, and open the handoff window
+        // for EVERY reaped crash (a double fault must not run unshielded).
+        if (crash_reaped) {
+            post_failover_handoff_open = true;
+            // Clock starts here, not at `failover_detected`: that timestamp is
+            // recorded once per supervisor lifetime (it anchors the timing
+            // witness), so a second crash would inherit an expired deadline.
+            post_failover_handoff_deadline = std::chrono::steady_clock::now() +
+                                             std::chrono::milliseconds(config.handoff_grace_ms);
+            if (state != SupervisorState::kDegraded) {
+                state = SupervisorState::kFailoverDetected;
+            }
+        }
         if (!failover_previously_detected &&
-            failover_detected.time_since_epoch().count() != 0 &&
-            records_before_failover == 0u) {
+            failover_detected.time_since_epoch().count() != 0 && records_before_failover == 0u) {
             records_before_failover = output_witness_a.records;
         }
         shared_memory::OwnershipToken logical_a;
@@ -516,6 +550,15 @@ int run_supervisor(const SupervisorConfig& config) {
                 failover_timing_emitted = true;
             }
             output_witness_a.first_post_failover = true;
+            // T-0032: the promoted owner is producing again; monitor stall
+            // alerts from here on describe real stalls.
+            post_failover_handoff_open = false;
+        }
+        // T-0032: bounded handoff window -- if the ring never commits, the
+        // window still closes and normal stall detection resumes.
+        if (post_failover_handoff_open && std::chrono::steady_clock::now() >
+                                              post_failover_handoff_deadline) {
+            post_failover_handoff_open = false;
         }
         // T-0025 (DEC-0012 #3): bounded stall recovery. One SIGCONT was
         // issued when the alert arrived; every loop either sees the ring
@@ -585,8 +628,17 @@ int run_supervisor(const SupervisorConfig& config) {
                 }
                 if (parsed.kind == MonitorLineKind::kAlert &&
                     parsed.event == "worker_stalled" &&
+                    // T-0032: during a failover handoff the promoted owner has
+                    // not committed yet by design; arming the SIGCONT/SIGKILL
+                    // path from that alert SIGKILLs the worker that is in the
+                    // middle of recovering the ring. kFailoverDetected is
+                    // admitted (it is the post-failover steady state, T-0032)
+                    // so genuine stalls after the window still recover;
+                    // kDegraded stays sticky and terminal as before.
+                    !post_failover_handoff_open &&
                     (state == SupervisorState::kRunning ||
-                     state == SupervisorState::kStalledRecovering)) {
+                     state == SupervisorState::kStalledRecovering ||
+                     state == SupervisorState::kFailoverDetected)) {
                     std::uint64_t tail = 0;
                     std::uint64_t epoch = 0;
                     if (owned_ring_state(*region.get(), parsed.worker, tail, epoch) &&
