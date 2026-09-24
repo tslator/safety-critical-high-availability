@@ -1,7 +1,7 @@
 # T-0031: Phase 5 Integration, Evidence, and Exit
 
-- Status: Planned
-- Owner: Unassigned
+- Status: In Progress
+- Owner: AI agent (opencode)
 - Priority: High
 - Depends on: T-0023, T-0024, T-0025, T-0026, T-0027, T-0028, T-0029, T-0030
 - Phase: Phase 5

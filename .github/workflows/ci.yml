@@ -137,7 +137,7 @@ jobs:
   docker-compose-smoke:
     name: Compose runtime + failover smoke
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Validate stack startup, failover, and cleanup
@@ -149,18 +149,24 @@ jobs:
           docker compose exec supervisor safety-critical-ha --version
           ./containers/compose/failover-smoke.sh
           docker compose down --volumes --remove-orphans
-      # T-0029: Phase 5 perturbation scenarios S1/S2/S3/S5/S6, once each on
-      # the scenario overlay (T-0031 runs them 5x each for phase exit).
-      - name: Run perturbation scenarios (S1, S2, S3, S5, S6)
+      # T-0031 (Phase 5 exit gate G5.4): each perturbation scenario runs five
+      # consecutive times on a fresh scenario-overlay stack. The dedicated CI
+      # runner is the reproducible reference host for the bounded-recovery
+      # timing budgets (DEC-0011 #5 worker_crashed <100 ms, DEC-0012 #10);
+      # because this step runs under bash -e, a single budget trip or recovery
+      # failure fails the job -- no run is discarded.
+      - name: Run perturbation scenarios 5x each (S1, S2, S3, S5, S6)
         run: |
           overlay="docker compose -f docker-compose.yml -f containers/compose/scenarios/compose.perturb.yml --profile perturb"
           $overlay config --quiet
           for scenario in s1_crash s2_stall s3_corrupt s5_double_fault s6_supervisor_kill; do
-            echo "::group::scenario ${scenario}"
-            $overlay up --wait --no-build
-            containers/compose/scenarios/${scenario}.sh
-            $overlay down --volumes --remove-orphans
-            echo "::endgroup::"
+            for run in 1 2 3 4 5; do
+              echo "::group::scenario ${scenario} (run ${run}/5)"
+              $overlay up --wait --no-build
+              containers/compose/scenarios/${scenario}.sh
+              $overlay down --volumes --remove-orphans
+              echo "::endgroup::"
+            done
           done
       # T-0030: deterministic replay of the recorded S1 crash (the script
       # owns its full stack lifecycle: up/run/down/up/replay/down).
