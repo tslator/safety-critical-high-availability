@@ -30,6 +30,7 @@ add_subdirectory(workers)
 add_subdirectory(monitors)
 add_subdirectory(supervisor)
 add_subdirectory(perturb)
+add_subdirectory(observability)
 add_subdirectory(app)
 
 if(SAFETY_CRIT_BUILD_TESTING)

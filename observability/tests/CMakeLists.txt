@@ -1,0 +1,5 @@
+add_executable(event_log_test event_log_test.cpp)
+target_link_libraries(event_log_test PRIVATE safety_crit::observability)
+safety_crit_apply_warnings(event_log_test)
+safety_crit_apply_sanitizers(event_log_test)
+safety_crit_register_tests(event_log_test)
