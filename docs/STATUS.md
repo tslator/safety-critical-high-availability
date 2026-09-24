@@ -1,6 +1,6 @@
 # Project Status
 
-- Current phase: Phase 5 complete (T-0023–T-0032 closed) — phase exit gate satisfied; Phase 6 (Observability and Certification-Grade Logging) planning next
+- Current phase: Phase 5 complete (T-0023–T-0032 closed) — phase exit gate satisfied; Phase 6 (Observability and Certification-Grade Logging) planned (review [D-2026-09-24-001](reviews/2026-09-24-phase6-observability-architecture.md), decision [DEC-0014](decisions/0014-phase6-observability-logging.md), tasks [T-0033](tasks/T-0033-event-log-library.md)–[T-0039](tasks/T-0039-phase6-integration-exit.md)); implementation not started
 - Current gate: Phase 5 exit gate satisfied — GoogleTest/Catch2 134/134, ASan+UBSan + TSan 118/118, Clang, Docker, Compose, five scenarios green 5× each on the CI reference host, and S1 replay determinism observed (see [evidence](evidence/phase-5.md))
 - Last updated: 2026-09-24
 
@@ -33,11 +33,14 @@
 | Phase 5 perturbation and fault injection | Complete | Accepted review [D-2026-09-22-001](reviews/2026-09-22-phase5-perturbation-architecture.md), decision [DEC-0012](decisions/0012-phase5-perturbation-engine.md); T-0023–T-0032 all complete; Phase 5 exit gate satisfied (see [evidence](evidence/phase-5.md)) |
 | T-0032: failover handoff visibility and stall bounding | Complete | Fix for the nondeterministic S1-R CI failure (run 35865376613): monitor stall bound now arms on an episode's first commit, the supervisor records failover from reap and shields the handoff window; green hosted run 35910007625 on commit 42614a2; review [D-2026-09-23-001](reviews/2026-09-23-s1r-handoff-stall-blindspot.md), decision [DEC-0013](decisions/0013-handoff-visibility-and-stall-bounding.md), [evidence](evidence/phase-5.md) |
 | T-0031: Phase 5 integration, evidence, and phase exit | Complete | Full Phase 5 matrix green on the CI reference host (run 35997271961, commit 8ba4b2d): GoogleTest/Catch2 134/134, ASan+UBSan + TSan 118/118, Clang, Docker, Compose; each perturbation scenario (S1/S2/S3/S5/S6) green 5× each (25 fresh-stack runs, G5.4); S1 replay determinism observed (G5.5); crash recovery 36–96 ms 0/5 over the `<100 ms` budget and other categories within DEC-0012 #10 bounds (G5.6); [evidence](evidence/phase-5.md) |
+| Phase 6 observability and certification-grade logging | Planned | Accepted review [D-2026-09-24-001](reviews/2026-09-24-phase6-observability-architecture.md), decision [DEC-0014](decisions/0014-phase6-observability-logging.md); tasks [T-0033](tasks/T-0033-event-log-library.md)–[T-0039](tasks/T-0039-phase6-integration-exit.md) authorized; new read-only `observability/` daemon (event log, Prometheus metrics, `/health`), supervisor/worker JSON log migration, supervisor redundancy explicitly excluded, region layout stays v4; [Phase 6 plan](phases/PHASE_6_OBSERVABILITY.md) |
 
 ## Next Work
 
-1. Phase 6 (Observability and Certification-Grade Logging) planning — review,
-   decision, and task breakdown per the task workflow.
+1. Implement Phase 6 per the [Phase 6 plan](phases/PHASE_6_OBSERVABILITY.md),
+   starting with [T-0033](tasks/T-0033-event-log-library.md) (event log
+   library) and [T-0035](tasks/T-0035-http-server-core.md) (HTTP server
+   core), which are independent.
 2. Optional tooling follow-ups from DEC-0008: `clang-static-analysis`
    (advisory) and `clang-sanitizers` presets.
 3. Deferred residual risk from DEC-0013 (Phase 5 evidence): a
@@ -57,4 +60,5 @@
 - [Phase plans](phases/README.md)
 - [Phase 4 plan](phases/PHASE_4_SUPERVISOR.md)
 - [Phase 5 plan](phases/PHASE_5_PERTURBATION.md)
+- [Phase 6 plan](phases/PHASE_6_OBSERVABILITY.md)
 - [Phase 0 plan](phases/PHASE_0_CONTAINER_AND_TOOLING.md) and [Phase 1 plan](phases/PHASE_1_SHARED_MEMORY.md)

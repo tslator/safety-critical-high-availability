@@ -29,3 +29,4 @@ The high-level roadmap remains in
 - [Phase 3 - Monitor Daemon](PHASE_3_MONITOR_DAEMON.md)
 - [Phase 4 - Supervisor and Crash Failover](PHASE_4_SUPERVISOR.md)
 - [Phase 5 - Perturbation and Fault Injection](PHASE_5_PERTURBATION.md)
+- [Phase 6 - Observability and Certification-Grade Logging](PHASE_6_OBSERVABILITY.md)
