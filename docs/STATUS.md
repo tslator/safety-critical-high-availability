@@ -1,7 +1,7 @@
 # Project Status
 
-- Current phase: Phase 5 planning initiated (Phase 4 exit gate satisfied 2026-09-21) — T-0023–T-0031 open, plus T-0032 (failover-handoff defect fix) in review
-- Current gate: G4.6 complete (Phase 4 exit; hosted run 35668187681 on commit 9013df9); Phase 5 G5.1 next
+- Current phase: Phase 5 implementation complete (T-0023–T-0030 and T-0032 closed) — T-0031 (integration, timing budgets, and phase exit) open
+- Current gate: Phase 5 G5.1–G5.3 and G5.5 satisfied by T-0023–T-0030/T-0032; G5.4 (five consecutive scenario runs), G5.6 (per-category timing) and the phase exit are T-0031 scope
 - Last updated: 2026-09-23
 
 ## Phase Status
@@ -30,14 +30,17 @@
 | T-0021: Compose runtime integration | Complete | Supervisor-only Compose topology sharing /dev/shm and /run/safety-critical-ha; healthcheck on region + worker pidfile liveness; in-container SIGKILL failover smoke verifies standby C promotion; GoogleTest/Catch2 95/95 |
 | T-0022: Phase 4 integration, evidence, and exit | Complete | Full Phase 4 matrix green (GoogleTest/Catch2 95/95; ASan+UBSan x2 87/87 each; TSan x2 87/87 each; clang-verify 95/95; Docker build; Compose smoke + in-container failover x5); 10-iteration crash-recovery timing min 84 / median 84 / max 91 / avg 85 ms (target `<100 ms`) with zero corruptions; supervisor witness events expose timing and shutdown summary on stdout |
 | Phase 4 supervisor and crash failover | Complete | Accepted review D-2026-09-20-002, decision DEC-0011; T-0015–T-0022 all complete; Phase 4 exit gate satisfied (see [evidence](evidence/phase-4.md)) |
-| Phase 5 perturbation and fault injection | Planning | Accepted review [D-2026-09-22-001](reviews/2026-09-22-phase5-perturbation-architecture.md), decision [DEC-0012](decisions/0012-phase5-perturbation-engine.md); T-0023–T-0031 open; phase plan at [PHASE_5_PERTURBATION.md](phases/PHASE_5_PERTURBATION.md) |
-| T-0032: failover handoff visibility and stall bounding | In Review | Fix for the nondeterministic S1-R CI failure (hosted run 35865376613): monitor stall bound now arms on an episode's first commit, the supervisor records failover from reap and shields the handoff window; review [D-2026-09-23-001](reviews/2026-09-23-s1r-handoff-stall-blindspot.md), decision [DEC-0013](decisions/0013-handoff-visibility-and-stall-bounding.md), [evidence](evidence/phase-5.md) |
+| Phase 5 perturbation and fault injection | In Progress | Accepted review [D-2026-09-22-001](reviews/2026-09-22-phase5-perturbation-architecture.md), decision [DEC-0012](decisions/0012-phase5-perturbation-engine.md); T-0023–T-0030 and T-0032 complete; T-0031 (integration, timing, exit) open; phase plan at [PHASE_5_PERTURBATION.md](phases/PHASE_5_PERTURBATION.md) |
+| T-0032: failover handoff visibility and stall bounding | Complete | Fix for the nondeterministic S1-R CI failure (run 35865376613): monitor stall bound now arms on an episode's first commit, the supervisor records failover from reap and shields the handoff window; green hosted run 35910007625 on commit 42614a2; review [D-2026-09-23-001](reviews/2026-09-23-s1r-handoff-stall-blindspot.md), decision [DEC-0013](decisions/0013-handoff-visibility-and-stall-bounding.md), [evidence](evidence/phase-5.md) |
 
 ## Next Work
 
-1. T-0025: supervisor stall recovery (SIGCONT then SIGKILL escalation).
-2. Then T-0026 → T-0027 → T-0028 → T-0029 → T-0030 → T-0031 in
-   dependency order.
+1. T-0031: Phase 5 integration, evidence, and phase exit — five consecutive
+   runs of each perturbation scenario (G5.4), per-category bounded-recovery
+   timing budgets per DEC-0012 #10 (G5.6), and the framework/sanitizer/Clang/
+   Docker/Compose/hosted-CI exit evidence recorded in
+   [Phase 5 evidence](evidence/phase-5.md) (phase exit).
+2. Then Phase 6 (Observability and Certification-Grade Logging) planning.
 3. Optional tooling follow-ups from DEC-0008: `clang-static-analysis`
    (advisory) and `clang-sanitizers` presets.
 

@@ -373,6 +373,7 @@ here or in `NOTES.md`.
   S1/S2/S3/S5/S6 PASS, S1-R PASS 3x unconstrained and 8x under 16-way CPU
   contention (with contention, `a_records` deltas stayed well inside the 200
   tolerance and no stall artifacts appeared in either phase).
+- Hosted CI: [run 35910007625](https://github.com/tslator/safety-critical-high-availability/actions/runs/35910007625) on commit `42614a2` (2026-09-23), all ten jobs green. This is the first green run after the S1-R flake (prior run 35865376613 failed on the exact defect T-0032 fixes); the Compose job includes the five perturbation scenarios plus the S1 deterministic replay.
 - Residual risk (deferred, DEC-0013): the status word and pidfile of a slot
   cannot be attributed to a process generation, so a crash can still be
   misread as a `worker_idle` edge (the monitor's `worker_crashed` alert is
