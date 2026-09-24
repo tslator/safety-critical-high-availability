@@ -1,6 +1,6 @@
 # T-0031: Phase 5 Integration, Evidence, and Exit
 
-- Status: In Progress
+- Status: Complete
 - Owner: AI agent (opencode)
 - Priority: High
 - Depends on: T-0023, T-0024, T-0025, T-0026, T-0027, T-0028, T-0029, T-0030
@@ -28,3 +28,7 @@ phase exit documentation.
 
 Close only with the hosted CI run and [Phase 5 evidence](../evidence/phase-5.md)
 linked.
+
+- Phase 5 evidence: [T-0031 Result](../evidence/phase-5.md#t-0031-result-phase-5-exit-gate).
+- Hosted CI: [run 35997271961](https://github.com/tslator/safety-critical-high-availability/actions/runs/35997271961) on commit `8ba4b2d` (2026-09-24), all ten jobs green (Compose job runs each perturbation scenario 5× each plus the S1 deterministic replay).
+- G5.4: S1/S2/S3/S5/S6 green 5 consecutive times each on the CI reference host. G5.5: replay determinism observed. G5.6: crash recovery 36–96 ms, 0/5 over the <100 ms budget; other categories within DEC-0012 #10 bounds.

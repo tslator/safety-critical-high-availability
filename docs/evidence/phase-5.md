@@ -381,3 +381,60 @@ here or in `NOTES.md`.
   root fix needs a generation-stamped status word and its own decision.
   `s1_crash.sh`'s hard < 100 ms recovery budget is the same runner-sensitivity
   class and is left for T-0031.
+
+## T-0031 Result (Phase 5 exit gate)
+
+- Scope: run the complete Phase 5 matrix, repeated scenario runs, hosted CI,
+  and phase-exit documentation; close gates G5.4, G5.5, G5.6, and Phase 5 Exit.
+- **G5.4 decision (reference host).** Repeated scenario runs are executed on
+  the dedicated CI runner as the reproducible reference host. The
+  `docker-compose-smoke` step was converted from one run per scenario to five
+  consecutive runs per scenario on a fresh scenario-overlay stack (each
+  `up --wait` → scenario → `down --volumes`), so a single budget trip or
+  recovery failure fails the job under `bash -e` — no run is discarded. Job
+  timeout raised 30 → 45 min for the 25 stack cycles. (A loaded 24-core dev
+  host with `cpus: 1.5` caps proved a non-reproducible reference for the
+  <100 ms budget: S1 timings clustered 70–104 ms and tripped ~30% of the time
+  on the timing assertion alone — crash detection and replacement liveness
+  passed in every local run — so it was set aside in favor of the CI runner.
+  Local pre-check on that host nonetheless confirmed the functional result:
+  base failover smoke PASS, S2/S3/S5/S6 green 5× each, S1-R replay green
+  (`a_records` 743 vs 750, tol 200).)
+- **G5.4 result — all five scenarios green five consecutive times each** on
+  the CI reference host (run 35997271961, commit `8ba4b2d`):
+  `s1_crash` 5/5, `s2_stall` 5/5, `s3_corrupt` 5/5, `s5_double_fault` 5/5,
+  `s6_supervisor_kill` 5/5 (25 fresh-stack scenario runs, zero failures).
+- **G5.5 result — replay determinism contract observed** on the CI reference
+  host: `s1_replay.sh` PASS; supervisor event-category sequence, ownership
+  tokens for all three rings, shutdown witness state, corruption counts and
+  failover flags identical across record and replay phases; committed
+  `a_records` 749 vs 750 (tolerance 200).
+- **G5.6 result — bounded recovery within DEC-0012 #10 budgets:**
+  - `worker_crashed` (`<100 ms`): CI-measured first post-failover record at
+    36 / 56 / 73 / 75 / 96 ms; **0/5 over budget**, max 96 ms (Phase 4
+    baseline preserved).
+  - stall → SIGCONT (same supervisor loop iteration as detection, by design
+    ≤ one loop interval): S2 green 5× (`worker_stalled` → `stall recovered for
+    physical N` → `worker_recovered`).
+  - stall → SIGKILL escalation (`stall_grace_ms` 200 + one loop interval,
+    <300 ms, bounded by `StallRecoveryTracker`): pinned by unit test
+    `StallRecoveryEscalatesAfterGracePeriod` (strict `>` boundary).
+  - memory-corruption (no absolute SLA; bounded by drain cadence): S3 green
+    5× (`a_corruptions=1` in the shutdown witness, worker and supervisor
+    survive, records keep flowing across the skip).
+  - double-fault (first ring recovers `<100 ms` of the second crash — the
+    same reap-based path — and `logical ring N degraded` is emitted in the
+    same loop iteration): S5 green 5×.
+- **Phase 5 Exit** — the T-0031 hosted CI run 35997271961 (commit `8ba4b2d`,
+  2026-09-24) is green across all ten jobs: GoogleTest 134/134, Catch2
+  134/134, ASan+UBSan ×2 118/118, TSan ×2 118/118 (zero reports), Clang
+  verification (pinned clang-14), Docker build, AI-guidance drift check, and
+  the Compose job (base failover smoke + five scenarios ×5 + S1 deterministic
+  replay). `./scripts/sync-agent-guidance.sh --check` PASS.
+- Residual risk (unchanged, deferred to a future decision per DEC-0013): the
+  status word / pidfile of a slot are not generation-attributable, so the
+  monitor's `worker_crashed` alert edge remains unasserted by S1/S1-R; the
+  root fix needs a generation-stamped status word. This does not affect the
+  Phase 5 exit gates, which are satisfied by the supervisor-side recovery
+  contracts and the CI reference-host timings above.
+- Hosted CI: [run 35997271961](https://github.com/tslator/safety-critical-high-availability/actions/runs/35997271961) on commit `8ba4b2d` (2026-09-24), all ten jobs green — Phase 5 exit gate evidence.

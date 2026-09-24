@@ -1,8 +1,8 @@
 # Project Status
 
-- Current phase: Phase 5 implementation complete (T-0023–T-0030 and T-0032 closed) — T-0031 (integration, timing budgets, and phase exit) open
-- Current gate: Phase 5 G5.1–G5.3 and G5.5 satisfied by T-0023–T-0030/T-0032; G5.4 (five consecutive scenario runs), G5.6 (per-category timing) and the phase exit are T-0031 scope
-- Last updated: 2026-09-23
+- Current phase: Phase 5 complete (T-0023–T-0032 closed) — phase exit gate satisfied; Phase 6 (Observability and Certification-Grade Logging) planning next
+- Current gate: Phase 5 exit gate satisfied — GoogleTest/Catch2 134/134, ASan+UBSan + TSan 118/118, Clang, Docker, Compose, five scenarios green 5× each on the CI reference host, and S1 replay determinism observed (see [evidence](evidence/phase-5.md))
+- Last updated: 2026-09-24
 
 ## Phase Status
 
@@ -30,19 +30,19 @@
 | T-0021: Compose runtime integration | Complete | Supervisor-only Compose topology sharing /dev/shm and /run/safety-critical-ha; healthcheck on region + worker pidfile liveness; in-container SIGKILL failover smoke verifies standby C promotion; GoogleTest/Catch2 95/95 |
 | T-0022: Phase 4 integration, evidence, and exit | Complete | Full Phase 4 matrix green (GoogleTest/Catch2 95/95; ASan+UBSan x2 87/87 each; TSan x2 87/87 each; clang-verify 95/95; Docker build; Compose smoke + in-container failover x5); 10-iteration crash-recovery timing min 84 / median 84 / max 91 / avg 85 ms (target `<100 ms`) with zero corruptions; supervisor witness events expose timing and shutdown summary on stdout |
 | Phase 4 supervisor and crash failover | Complete | Accepted review D-2026-09-20-002, decision DEC-0011; T-0015–T-0022 all complete; Phase 4 exit gate satisfied (see [evidence](evidence/phase-4.md)) |
-| Phase 5 perturbation and fault injection | In Progress | Accepted review [D-2026-09-22-001](reviews/2026-09-22-phase5-perturbation-architecture.md), decision [DEC-0012](decisions/0012-phase5-perturbation-engine.md); T-0023–T-0030 and T-0032 complete; T-0031 (integration, timing, exit) open; phase plan at [PHASE_5_PERTURBATION.md](phases/PHASE_5_PERTURBATION.md) |
+| Phase 5 perturbation and fault injection | Complete | Accepted review [D-2026-09-22-001](reviews/2026-09-22-phase5-perturbation-architecture.md), decision [DEC-0012](decisions/0012-phase5-perturbation-engine.md); T-0023–T-0032 all complete; Phase 5 exit gate satisfied (see [evidence](evidence/phase-5.md)) |
 | T-0032: failover handoff visibility and stall bounding | Complete | Fix for the nondeterministic S1-R CI failure (run 35865376613): monitor stall bound now arms on an episode's first commit, the supervisor records failover from reap and shields the handoff window; green hosted run 35910007625 on commit 42614a2; review [D-2026-09-23-001](reviews/2026-09-23-s1r-handoff-stall-blindspot.md), decision [DEC-0013](decisions/0013-handoff-visibility-and-stall-bounding.md), [evidence](evidence/phase-5.md) |
+| T-0031: Phase 5 integration, evidence, and phase exit | Complete | Full Phase 5 matrix green on the CI reference host (run 35997271961, commit 8ba4b2d): GoogleTest/Catch2 134/134, ASan+UBSan + TSan 118/118, Clang, Docker, Compose; each perturbation scenario (S1/S2/S3/S5/S6) green 5× each (25 fresh-stack runs, G5.4); S1 replay determinism observed (G5.5); crash recovery 36–96 ms 0/5 over the `<100 ms` budget and other categories within DEC-0012 #10 bounds (G5.6); [evidence](evidence/phase-5.md) |
 
 ## Next Work
 
-1. T-0031: Phase 5 integration, evidence, and phase exit — five consecutive
-   runs of each perturbation scenario (G5.4), per-category bounded-recovery
-   timing budgets per DEC-0012 #10 (G5.6), and the framework/sanitizer/Clang/
-   Docker/Compose/hosted-CI exit evidence recorded in
-   [Phase 5 evidence](evidence/phase-5.md) (phase exit).
-2. Then Phase 6 (Observability and Certification-Grade Logging) planning.
-3. Optional tooling follow-ups from DEC-0008: `clang-static-analysis`
+1. Phase 6 (Observability and Certification-Grade Logging) planning — review,
+   decision, and task breakdown per the task workflow.
+2. Optional tooling follow-ups from DEC-0008: `clang-static-analysis`
    (advisory) and `clang-sanitizers` presets.
+3. Deferred residual risk from DEC-0013 (Phase 5 evidence): a
+   generation-stamped status word so the monitor can attribute a slot to a
+   process generation and assert the `worker_crashed` alert edge in S1/S1-R.
 
 ## Documentation Map
 
