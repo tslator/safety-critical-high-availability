@@ -1,8 +1,8 @@
 # Project Status
 
-- Current phase: Phase 6 (Observability and Certification-Grade Logging) in progress — T-0033 (event log library) complete; remaining: [T-0034](tasks/T-0034-structured-logging-migration.md)–[T-0039](tasks/T-0039-phase6-integration-exit.md) (review [D-2026-09-24-001](reviews/2026-09-24-phase6-observability-architecture.md), decision [DEC-0014](decisions/0014-phase6-observability-logging.md))
+- Current phase: Phase 6 (Observability and Certification-Grade Logging) in progress — T-0033 (event log library) and T-0035 (HTTP server core) complete; remaining: [T-0034](tasks/T-0034-structured-logging-migration.md), [T-0036](tasks/T-0036-metrics-registry-prometheus.md)–[T-0039](tasks/T-0039-phase6-integration-exit.md) (review [D-2026-09-24-001](reviews/2026-09-24-phase6-observability-architecture.md), decision [DEC-0014](decisions/0014-phase6-observability-logging.md))
 - Current gate: Phase 5 exit gate satisfied — GoogleTest/Catch2 134/134, ASan+UBSan + TSan 118/118, Clang, Docker, Compose, five scenarios green 5× each on the CI reference host, and S1 replay determinism observed (see [evidence](evidence/phase-5.md))
-- Last updated: 2026-09-24
+- Last updated: 2026-09-25
 
 ## Phase Status
 
@@ -35,13 +35,16 @@
 | T-0031: Phase 5 integration, evidence, and phase exit | Complete | Full Phase 5 matrix green on the CI reference host (run 35997271961, commit 8ba4b2d): GoogleTest/Catch2 134/134, ASan+UBSan + TSan 118/118, Clang, Docker, Compose; each perturbation scenario (S1/S2/S3/S5/S6) green 5× each (25 fresh-stack runs, G5.4); S1 replay determinism observed (G5.5); crash recovery 36–96 ms 0/5 over the `<100 ms` budget and other categories within DEC-0012 #10 bounds (G5.6); [evidence](evidence/phase-5.md) |
 | Phase 6 observability and certification-grade logging | In progress | Accepted review [D-2026-09-24-001](reviews/2026-09-24-phase6-observability-architecture.md), decision [DEC-0014](decisions/0014-phase6-observability-logging.md); tasks [T-0033](tasks/T-0033-event-log-library.md)–[T-0039](tasks/T-0039-phase6-integration-exit.md) authorized; new read-only `observability/` daemon (event log, Prometheus metrics, `/health`), supervisor/worker JSON log migration, supervisor redundancy explicitly excluded, region layout stays v4; [Phase 6 plan](phases/PHASE_6_OBSERVABILITY.md) |
 | T-0033: sequenced append-only event log library | Complete | New `safety_crit::observability` static library in `observability/` (schema v1 JSON-lines writer/reader, per-instance seq recovery, fsync-on-warn policy, torn-line tolerance, watermark resume); 11 tests ×2 frameworks green (GoogleTest/Catch2 145/145), ASan+UBSan 128/128, TSan 128/128 ×2 legs under `setarch --addr-no-randomize`; zero changes under `shared-memory/`; [evidence](evidence/phase-6.md) |
+| T-0035: bounded HTTP/1.1 server core | Complete | Hand-rolled single-threaded `poll()` server in `safety_crit::observability` (GET/HEAD + routes, keep-alive, `std::stop_token` + `sig_atomic_t` shutdown; bounds: 512 B request line / 32 lines / 8 KiB headers → 431, 2 s request → 408, 5 s idle close, 16 connections, no request bodies); 15 loopback socket tests ×2 frameworks green (GoogleTest/Catch2 160/160), ASan+UBSan 143/143, TSan 143/143 under `setarch --addr-no-randomize`, socket tests active under sanitizers; zero changes under `shared-memory/`; [evidence](evidence/phase-6.md) |
 
 ## Next Work
 
 1. Continue Phase 6 per the [Phase 6 plan](phases/PHASE_6_OBSERVABILITY.md):
-   [T-0034](tasks/T-0034-structured-logging-migration.md) (structured
-   logging migration) and [T-0035](tasks/T-0035-http-server-core.md) (HTTP
-   server core) are now unblocked and independent.
+   next up is [T-0034](tasks/T-0034-structured-logging-migration.md)
+   (structured logging migration), then
+   [T-0036](tasks/T-0036-metrics-registry-prometheus.md) (metrics
+   registry), which builds on the completed
+   [T-0035](tasks/T-0035-http-server-core.md) HTTP server core.
 2. Optional tooling follow-ups from DEC-0008: `clang-static-analysis`
    (advisory) and `clang-sanitizers` presets.
 3. Deferred residual risk from DEC-0013 (Phase 5 evidence): a

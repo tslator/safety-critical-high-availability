@@ -64,3 +64,53 @@ evidence here or in `NOTES.md`.
 - No shared-memory code touched: `git status` shows zero changes under
   `shared-memory/`; region layout untouched (v4).
 - Hosted CI: pending (recorded at phase integration if not per task).
+
+## T-0035 Result
+
+- Implementation: `observability/include/safety_crit/observability/http_server.hpp`
+  + `observability/src/http_server.cpp` (library
+  `safety_crit::observability`). Single-threaded `poll()` loop (100 ms
+  tick), `std::stop_token` + `sig_atomic_t` shutdown pattern; IPv4 only.
+  GET/HEAD accepted (HEAD omits body), other methods → 405; unknown path →
+  404; request target validated (no control chars/spaces) → 400;
+  `Content-Length` request bodies not accepted → 400; keep-alive with
+  per-connection buffer reuse; ≤ 64 KiB handler body → else 500.
+  Bounds enforced per task spec: request line ≤ 512 B and headers ≤ 32
+  lines / 8 KiB → 431 with connection closed; request timeout 2 s → 408;
+  idle timeout 5 s → silent close; ≤ 16 concurrent connections (excess
+  accepted then immediately closed). Responses built with `snprintf` into
+  a fixed per-connection header buffer; no per-request allocation beyond
+  the bounded connection array; route table is a fixed vector of
+  path → handler entries. Live-connection count backed by an atomic
+  counter so the test harness can observe it from another thread without
+  racing the loop.
+- Tests: `observability/tests/http_server_test.cpp`, 15 cases in both
+  frameworks using a raw POSIX socket client (no third-party HTTP lib):
+  `ParseListenAddress` (config-boundary address validation);
+  `GetRoundtrip200`; `HeadReturnsHeadersWithoutBody`; `UnknownPath404`;
+  `PostAndPut405`; `OversizedRequestLine431AndClose`;
+  `HeaderOverflow431AndClose` (line-count and byte-count overflow);
+  `MalformedRequests400` (bad request line, invalid target,
+  `Content-Length` body); `HandlerFailure500`; `ResponseBodyOverBound500`;
+  `RequestTimeout408`; `IdleTimeoutClosesConnection`;
+  `KeepAliveServesSequentialRequests`;
+  `ConnectionCapAcceptsAndClosesExcess` (16 held, excess accepted-then-
+  closed, slot released after close);
+  `NoFdLeakAcrossCyclesAndCleanShutdown` (N sequential connect/close
+  leaves fd count unchanged; shutdown closes the listening socket, later
+  connect → `ECONNREFUSED`).
+- GoogleTest 160/160 (145 pre-existing + 15 new); Catch2 160/160.
+- ASan+UBSan (GoogleTest): 143/143, zero reports — HTTP socket tests
+  active under sanitizers (no skip-pass).
+- TSan (Catch2) under `setarch --addr-no-randomize`,
+  `TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1`: 143/143, zero
+  race reports. Note: the gcc-13 TSan runtime intermittently aborts at
+  process startup on the reference host's kernel 7.0 with
+  `FATAL: ThreadSanitizer: unexpected memory mapping` (affects test
+  discovery of pre-existing targets too, e.g. `supervisor_test`);
+  `setarch --addr-no-randomize` is the established workaround from
+  T-0033 and remains required for local TSan builds.
+- No monitor/supervisor process changes; no shared-memory code touched:
+  `git status` shows zero changes under `shared-memory/`; region layout
+  untouched (v4).
+- Hosted CI: pending (recorded at phase integration if not per task).
