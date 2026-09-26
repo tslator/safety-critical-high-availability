@@ -22,6 +22,7 @@
 #include <thread>
 
 #include "safety_crit/monitors/monitor_config.hpp"
+#include "safety_crit/observability/event_log.hpp"
 #include "safety_crit/monitors/monitor_entry.hpp"
 #include "safety_crit/monitors/pidfile_liveness.hpp"
 #include "safety_crit/shared_memory/atomic_flags.hpp"
@@ -339,6 +340,81 @@ SAFETY_CRIT_TEST_CASE(monitors_integration, StandbyReportedIdleAliveNoCrash) {
     SAFETY_CRIT_ASSERT(has_event(log, "worker_idle"));
     SAFETY_CRIT_ASSERT(!has_event(log, "worker_crashed"));
     SAFETY_CRIT_ASSERT(fx.region()->rings[0].consumed() == 0u);
+}
+
+// T-0034 (DEC-0014 Â§4): with an event log configured, the monitor
+// appends the very same records it prints (component "monitor"), leaving
+// the stdout JSON stream byte-identical.
+SAFETY_CRIT_TEST_CASE(monitors_integration, EventLogMirrorsStdoutStream) {
+    Fixture fx("eventlog");
+    SAFETY_CRIT_ASSERT(fx.ok());
+    const std::string log_path = fx.out_path() + ".jsonl";
+    std::error_code ec;
+    std::filesystem::remove(log_path, ec);
+
+    const WorkerConfig wcfg = hot_config(0, 1000000, std::chrono::milliseconds(5));
+    const pid_t worker = fork_worker(wcfg, fx.name(), fx.pid_dir());
+    SAFETY_CRIT_ASSERT(worker > 0);
+    SAFETY_CRIT_ASSERT(wait_running(fx, 0, 3000));
+
+    const pid_t monitor = ::fork();
+    SAFETY_CRIT_ASSERT(monitor >= 0);
+    if (monitor == 0) {
+        ::freopen(fx.out_path().c_str(), "w", stdout);
+        ::freopen("/dev/null", "w", stderr);
+        MonitorConfig cfg{};
+        cfg.poll_interval = std::chrono::milliseconds(10);
+        cfg.stall_threshold = std::chrono::milliseconds(100);
+        cfg.event_log_path = log_path;
+        const int rc = safety_crit::monitors::run_monitor(cfg, fx.name(), fx.pid_dir().c_str(), 0);
+        ::_exit(rc);
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    SAFETY_CRIT_ASSERT(::kill(worker, SIGKILL) == 0);
+    int wstatus = 0;
+    ::waitpid(worker, &wstatus, 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));  // >= 10 polls
+
+    SAFETY_CRIT_ASSERT(::kill(monitor, SIGTERM) == 0);
+    const int mstatus = timed_wait(monitor, 3000);
+    SAFETY_CRIT_ASSERT(mstatus >= 0);
+    SAFETY_CRIT_ASSERT(WEXITSTATUS(mstatus) == 0);
+
+    // Stdout stream unchanged in shape; report also lands in the log.
+    expect_monitor_lines(read_file(fx.out_path()));
+
+    safety_crit::observability::EventLogReader reader{};
+    SAFETY_CRIT_ASSERT(reader.open(log_path, ec));
+    std::string events;
+    std::string all_raw;
+    std::string last_event;
+    std::size_t count = 0;
+    for (;;) {
+        safety_crit::observability::EventRecord record{};
+        std::string read_error;
+        const auto got = reader.read_next(record, read_error);
+        if (got == safety_crit::observability::ReadStatus::kEnd) {
+            break;
+        }
+        SAFETY_CRIT_ASSERT(got == safety_crit::observability::ReadStatus::kOk);
+        SAFETY_CRIT_ASSERT(record.component == "monitor");
+        ++count;
+        SAFETY_CRIT_ASSERT(record.seq == count);
+        events += record.event;
+        events += ';';
+        last_event = record.event;
+        all_raw += record.raw;
+        all_raw += '\n';
+    }
+    SAFETY_CRIT_ASSERT(reader.gaps_total() == 0);
+    SAFETY_CRIT_ASSERT(count >= 3u);
+    SAFETY_CRIT_ASSERT(events.find("worker_running;") != std::string::npos);
+    SAFETY_CRIT_ASSERT(events.find("worker_crashed;") != std::string::npos);
+    SAFETY_CRIT_ASSERT(last_event == "monitor_report");  // report closes the stream
+    SAFETY_CRIT_ASSERT(all_raw.find("\"worker_crashed\":1") != std::string::npos);
+    SAFETY_CRIT_ASSERT(all_raw.find("\"worker\":0") != std::string::npos);
+
+    std::filesystem::remove(log_path, ec);
 }
 
 #endif  // SAFETY_CRIT_P3_SANITIZED

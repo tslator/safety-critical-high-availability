@@ -23,7 +23,9 @@ perturb crash --target "${hot_a}" | tee -a "${REPLAY}" >/dev/null
 wait_new_live_pid 0 "${hot_a}" 10
 wait_healthy 20
 
-timing_line="$(supervisor_log | grep -oE 'first post-failover record observed in [0-9]+ ms' | tail -1)"
+# T-0034: the compose stack runs the supervisor with --event-log, so witness
+# lines are JSON on stdout (schema v1 without the seq bookkeeping).
+timing_line="$(supervisor_log | grep -oE '"latency_ms":[0-9]+' | tail -1)"
 [ -n "${timing_line}" ] || fail "no first post-failover timing emitted"
 timing_ms="$(printf '%s' "${timing_line}" | grep -oE '[0-9]+')"
 [ "${timing_ms}" -lt 100 ] || fail "recovery over budget: ${timing_ms} ms >= 100 ms"

@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <string>
 
 #include "safety_crit/shared_memory/shared_region.hpp"
 
@@ -39,6 +40,12 @@ struct WorkerConfig {
     // Production default is false; the CLI flag or env var opts in (see
     // corruption_hook_opt_in).
     bool corrupt_hook{false};
+    // T-0034 (DEC-0014 §4): opt-in consolidated event log path. Empty keeps
+    // the process byte-identical to Phase 5; when set, lifecycle events
+    // (worker_started, worker_stopped, worker_deadline_overrun) are appended
+    // to the log. Workers never add stdout output (DEC-0009 #6); the path
+    // arrives via the supervisor's inherited configuration.
+    std::string event_log_path{};
 };
 
 // T-0027 (DEC-0012 #5): single decision point for the corruption-hook opt-in:

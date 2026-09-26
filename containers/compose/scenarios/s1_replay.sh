@@ -54,11 +54,12 @@ dump_diagnostics() {
 
 trap dump_diagnostics EXIT
 
-# Ordered supervisor event categories (timestamps/counts stripped; the
-# categories themselves must match exactly, in order).
+# Ordered supervisor event categories (timestamps/latencies stripped; the
+# event names themselves must match exactly, in order). T-0034: the compose
+# stack runs with --event-log, so these are the JSON witness lines.
 event_categories() {
   supervisor_log | grep -oE \
-    'first post-failover record observed|logical ring [0-9]+ degraded|stall escalation|stall recovered' || true
+    '"event":"failover_recovered"|"event":"ring_degraded"|"event":"stall_escalated"|"event":"stall_recovered"' || true
 }
 
 ownership_snapshot() {
@@ -66,14 +67,14 @@ ownership_snapshot() {
 }
 
 witness_line() {
-  supervisor_log | grep -E 'supervisor: shutdown state=' | tail -1
+  supervisor_log | grep -E '"event":"shutdown_summary"' | tail -1
 }
 
 # Graceful shutdown of PID 1, wait for the witness line; the restart policy
 # may bring a fresh supervisor up again, so wait on the line, not liveness.
 shutdown_and_witness() {
   compose exec -T supervisor kill -TERM 1 2>/dev/null || true
-  wait_log 'supervisor: shutdown state=' 20
+  wait_log '"event":"shutdown_summary"' 20
 }
 
 run_original_phase() {
@@ -135,28 +136,28 @@ diff /tmp/s1r_ownership_original.txt /tmp/s1r_ownership_replayed.txt ||
   fail "final ownership differs (original vs replayed above)"
 
 # Crash must have been observed in BOTH runs.
-grep -q 'first post-failover record observed' /tmp/s1r_events_replayed.txt ||
+grep -q '"event":"failover_recovered"' /tmp/s1r_events_replayed.txt ||
   fail "replay did not reproduce the crash event"
 [ -s /tmp/s1r_events_original.txt ] || fail "original run emitted no categorized events"
 
-orig_state="$(grep -oE 'state=[0-9]+' /tmp/s1r_witness_original.txt | cut -d= -f2)"
-repl_state="$(grep -oE 'state=[0-9]+' /tmp/s1r_witness_replayed.txt | cut -d= -f2)"
+orig_state="$(grep -oE '"state":[0-9]+' /tmp/s1r_witness_original.txt | cut -d: -f2)"
+repl_state="$(grep -oE '"state":[0-9]+' /tmp/s1r_witness_replayed.txt | cut -d: -f2)"
 [ "${orig_state}" = "${repl_state}" ] ||
   fail "shutdown states differ: ${orig_state} vs ${repl_state}"
 
-orig_flags="$(grep -oE 'a_first_post_failover=[01]|failover_timing_emitted=[01]' /tmp/s1r_witness_original.txt | sort | tr '\n' ' ')"
-repl_flags="$(grep -oE 'a_first_post_failover=[01]|failover_timing_emitted=[01]' /tmp/s1r_witness_replayed.txt | sort | tr '\n' ' ')"
+orig_flags="$(grep -oE '"a_first_post_failover":[01]|"failover_timing_emitted":[01]' /tmp/s1r_witness_original.txt | sort | tr '\n' ' ')"
+repl_flags="$(grep -oE '"a_first_post_failover":[01]|"failover_timing_emitted":[01]' /tmp/s1r_witness_replayed.txt | sort | tr '\n' ' ')"
 [ "${orig_flags}" = "${repl_flags}" ] ||
   fail "witness failover flags differ: [${orig_flags}] vs [${repl_flags}]"
 
-orig_records="$(grep -oE 'a_records=[0-9]+' /tmp/s1r_witness_original.txt | cut -d= -f2)"
-repl_records="$(grep -oE 'a_records=[0-9]+' /tmp/s1r_witness_replayed.txt | cut -d= -f2)"
+orig_records="$(grep -oE '"a_records":[0-9]+' /tmp/s1r_witness_original.txt | cut -d: -f2)"
+repl_records="$(grep -oE '"a_records":[0-9]+' /tmp/s1r_witness_replayed.txt | cut -d: -f2)"
 delta=$((orig_records - repl_records))
 [ "${delta#-}" -le "${RECORDS_TOLERANCE}" ] ||
   fail "committed records differ beyond tolerance: ${orig_records} vs ${repl_records}"
 
-orig_corruptions="$(grep -oE 'a_corruptions=[0-9]+' /tmp/s1r_witness_original.txt | cut -d= -f2)"
-repl_corruptions="$(grep -oE 'a_corruptions=[0-9]+' /tmp/s1r_witness_replayed.txt | cut -d= -f2)"
+orig_corruptions="$(grep -oE '"a_corruptions":[0-9]+' /tmp/s1r_witness_original.txt | cut -d: -f2)"
+repl_corruptions="$(grep -oE '"a_corruptions":[0-9]+' /tmp/s1r_witness_replayed.txt | cut -d: -f2)"
 [ "${orig_corruptions}" = "${repl_corruptions}" ] ||
   fail "corruption counts differ: ${orig_corruptions} vs ${repl_corruptions}"
 

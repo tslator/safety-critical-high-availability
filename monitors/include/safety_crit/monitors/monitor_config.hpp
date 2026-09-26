@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <string>
 
 namespace safety_crit::monitors {
 
@@ -22,6 +23,11 @@ struct MonitorConfig {
     // room for a loaded runner, because the stall detector cannot otherwise
     // tell "promoted, not committed yet" from "wedged".
     std::chrono::milliseconds handoff_grace{750};
+    // T-0034 (DEC-0014 §4): opt-in consolidated event log path. Empty keeps
+    // the monitor byte-identical to Phase 5; when set, every alert and the
+    // final report are ALSO appended to the log (stdout JSON output is
+    // unchanged -- the supervisor forwards it verbatim).
+    std::string event_log_path{};
 };
 
 // Validation boundary (CLI parsing in T3.2, tests here): all three durations

@@ -25,6 +25,7 @@
 #include "safety_crit/monitors/monitor_entry.hpp"
 #include "safety_crit/shared_memory/shm_attach.hpp"
 #include "safety_crit/runtime/scheduling.hpp"
+#include "safety_crit/supervisor/witness_events.hpp"
 #include "safety_crit/workers/worker_config.hpp"
 #include "safety_crit/workers/worker_entry.hpp"
 #include "safety_crit/workers/workload.hpp"
@@ -169,7 +170,8 @@ bool recover_worker_crash(shared_memory::SharedRegion& region,
                           std::uint32_t physical_worker,
                           const char* region_name, const char* pid_dir,
                           std::uint32_t& next_generation,
-                          std::array<bool, shared_memory::kMaxWorkers>& degraded_rings) {
+                          std::array<bool, shared_memory::kMaxWorkers>& degraded_rings,
+                          const std::string& event_log_path, WitnessSink* witness) {
     Child* crashed = find_worker(children, physical_worker);
     if (crashed == nullptr) {
         return true;
@@ -207,9 +209,14 @@ bool recover_worker_crash(shared_memory::SharedRegion& region,
             // physical process and a standby restart stores over it).
             shared_memory::set_flag(region.worker_status[physical_worker].status,
                                     shared_memory::WorkerStatusFlag::kDegraded);
-            std::printf("supervisor: logical ring %zu degraded (reason=standby_exhausted)\n",
-                        logical);
-            std::fflush(stdout);
+            if (witness != nullptr) {
+                witness->emit(observability::LogLevel::kError, kEventRingDegraded,
+                              ring_degraded_fields(static_cast<std::uint32_t>(logical)));
+            } else {
+                std::printf("supervisor: logical ring %zu degraded (reason=standby_exhausted)\n",
+                            logical);
+                std::fflush(stdout);
+            }
             degraded_rings[physical_worker] = true;
         }
     }
@@ -221,6 +228,7 @@ bool recover_worker_crash(shared_memory::SharedRegion& region,
     replacement.process_generation = replacement_generation;
     replacement.role = workers::WorkerRole::kStandby;
     replacement.ticks = 1000u;
+    replacement.event_log_path = event_log_path;
     const pid_t replacement_pid = launch_worker(replacement, region_name, pid_dir);
     if (replacement_pid < 0) {
         return false;
@@ -239,6 +247,7 @@ bool reap_crashed_workers(shared_memory::SharedRegion& region,
                           std::uint32_t& next_generation,
                           std::chrono::steady_clock::time_point* crash_observed,
                           std::array<bool, shared_memory::kMaxWorkers>& degraded_rings,
+                          const std::string& event_log_path, WitnessSink* witness,
                           bool* crash_reaped = nullptr) {
     for (std::size_t index = 0; index < children.size(); ++index) {
         Child& child = children[index];
@@ -257,9 +266,13 @@ bool reap_crashed_workers(shared_memory::SharedRegion& region,
             if (crash_reaped != nullptr) {
                 *crash_reaped = true;
             }
+            if (witness != nullptr) {
+                witness->emit(observability::LogLevel::kError, kEventFailoverStarted,
+                              failover_started_fields(child.physical_worker));
+            }
             if (!recover_worker_crash(region, children, child.physical_worker,
                                        region_name, pid_dir, next_generation,
-                                       degraded_rings)) {
+                                       degraded_rings, event_log_path, witness)) {
                 return false;
             }
         } else {
@@ -396,6 +409,21 @@ int run_supervisor(const SupervisorConfig& config) {
     if (directory_error && !std::filesystem::is_directory(config.pid_dir)) {
         return 1;
     }
+    // T-0034 (DEC-0014 §4): open the consolidated event log before any fork
+    // (children create their own writers). A failed open is degraded, not
+    // fatal: stdout JSON witnesses still work without the log.
+    WitnessSink witness_sink;
+    WitnessSink* witness = nullptr;
+    if (!config.event_log_path.empty()) {
+        std::error_code log_error;
+        if (!witness_sink.open(config.event_log_path, log_error)) {
+            std::fprintf(stderr,
+                         "supervisor: event log unavailable (%s), stdout-only\n",
+                         log_error.message().c_str());
+        } else {
+            witness = &witness_sink;
+        }
+    }
 
     int pipe_fds[2] = {-1, -1};
     if (::pipe(pipe_fds) != 0) {
@@ -410,8 +438,9 @@ int run_supervisor(const SupervisorConfig& config) {
         ::dup2(pipe_fds[1], STDOUT_FILENO);
         ::close(pipe_fds[1]);
         monitors::MonitorConfig monitor_config{};
+        monitor_config.event_log_path = config.event_log_path;
         const int rc = monitors::run_monitor(monitor_config, config.region_name,
-                                              config.pid_dir.c_str());
+                                               config.pid_dir.c_str());
         ::_exit(rc);
     }
     if (monitor < 0) {
@@ -426,6 +455,7 @@ int run_supervisor(const SupervisorConfig& config) {
     hot_a.worker_idx = 0;
     hot_a.logical_ring = 0;
     hot_a.ticks = config.worker_ticks;
+    hot_a.event_log_path = config.event_log_path;
     workers::WorkerConfig hot_b = hot_a;
     hot_b.worker_idx = 1;
     hot_b.logical_ring = 1;
@@ -433,13 +463,13 @@ int run_supervisor(const SupervisorConfig& config) {
     standby.worker_idx = 2;
     standby.logical_ring = shared_memory::kUnassignedPhysicalOwner;
     standby.role = workers::WorkerRole::kStandby;
-    for (const workers::WorkerConfig worker : {hot_a, hot_b, standby}) {
-        const pid_t pid = launch_worker(worker, config.region_name, config.pid_dir.c_str());
+    for (const workers::WorkerConfig* worker : {&hot_a, &hot_b, &standby}) {
+        const pid_t pid = launch_worker(*worker, config.region_name, config.pid_dir.c_str());
         if (pid < 0) {
             g_stop = 1;
             break;
         }
-        children.push_back({pid, worker.worker_idx, true, false});
+        children.push_back({pid, worker->worker_idx, true, false});
     }
 
     struct sigaction action{};
@@ -485,7 +515,8 @@ int run_supervisor(const SupervisorConfig& config) {
         bool crash_reaped = false;
         if (!reap_crashed_workers(*region.get(), children, config.region_name,
                                   config.pid_dir.c_str(), next_generation, &failover_detected,
-                                  degraded_rings, &crash_reaped)) {
+                                  degraded_rings, config.event_log_path, witness,
+                                  &crash_reaped)) {
             state = SupervisorState::kFailsafe;
             recovery_failed = true;
             break;
@@ -543,9 +574,14 @@ int run_supervisor(const SupervisorConfig& config) {
                     const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                                         std::chrono::steady_clock::now() - failover_detected)
                                         .count();
-                    std::printf("supervisor: first post-failover record observed in %lld ms\n",
-                                static_cast<long long>(ms));
-                    std::fflush(stdout);
+                    if (witness != nullptr) {
+                        witness->emit(observability::LogLevel::kInfo, kEventFailoverRecovered,
+                                      failover_recovered_fields(static_cast<std::uint64_t>(ms)));
+                    } else {
+                        std::printf("supervisor: first post-failover record observed in %lld ms\n",
+                                    static_cast<long long>(ms));
+                        std::fflush(stdout);
+                    }
                 }
                 failover_timing_emitted = true;
             }
@@ -580,15 +616,25 @@ int run_supervisor(const SupervisorConfig& config) {
                 if (state != SupervisorState::kDegraded) {
                     state = SupervisorState::kRunning;
                 }
-                std::printf("supervisor: stall recovered for physical %u at epoch %llu\n",
-                            event.physical_worker,
-                            static_cast<unsigned long long>(event.epoch));
-                std::fflush(stdout);
+                if (witness != nullptr) {
+                    witness->emit(observability::LogLevel::kInfo, kEventStallRecovered,
+                                  stall_recovered_fields(event.physical_worker, event.epoch));
+                } else {
+                    std::printf("supervisor: stall recovered for physical %u at epoch %llu\n",
+                                event.physical_worker,
+                                static_cast<unsigned long long>(event.epoch));
+                    std::fflush(stdout);
+                }
             } else if (event.outcome == StallRecoveryOutcome::kEscalate) {
-                std::printf("supervisor: stall escalation for physical %u at epoch %llu\n",
-                            event.physical_worker,
-                            static_cast<unsigned long long>(event.epoch));
-                std::fflush(stdout);
+                if (witness != nullptr) {
+                    witness->emit(observability::LogLevel::kError, kEventStallEscalated,
+                                  stall_escalated_fields(event.physical_worker, event.epoch));
+                } else {
+                    std::printf("supervisor: stall escalation for physical %u at epoch %llu\n",
+                                event.physical_worker,
+                                static_cast<unsigned long long>(event.epoch));
+                    std::fflush(stdout);
+                }
                 Child* stalled = find_worker(children, physical_worker);
                 if (stalled != nullptr && stalled->pid > 0) {
                     (void)::kill(stalled->pid, SIGKILL);
@@ -668,18 +714,29 @@ int run_supervisor(const SupervisorConfig& config) {
     // witness state (records, corruptions, first-post-failover) and the exit
     // reason so integration runs can verify continuity and clean shutdown
     // without attaching a second consumer to the ring.
-    std::printf(
-        "supervisor: shutdown state=%d a_records=%llu a_corruptions=%llu a_first_post_failover=%d "
-        "b_records=%llu b_corruptions=%llu b_first_post_failover=%d failover_timing_emitted=%d\n",
-        static_cast<int>(state),
-        static_cast<unsigned long long>(output_witness_a.records),
-        static_cast<unsigned long long>(output_witness_a.corruptions),
-        output_witness_a.first_post_failover ? 1 : 0,
-        static_cast<unsigned long long>(output_witness_b.records),
-        static_cast<unsigned long long>(output_witness_b.corruptions),
-        output_witness_b.first_post_failover ? 1 : 0,
-        failover_timing_emitted ? 1 : 0);
-    std::fflush(stdout);
+    if (witness != nullptr) {
+        witness->emit(
+            observability::LogLevel::kInfo, kEventShutdownSummary,
+            shutdown_summary_fields(static_cast<int>(state), output_witness_a.records,
+                                    output_witness_a.corruptions,
+                                    output_witness_a.first_post_failover,
+                                    output_witness_b.records, output_witness_b.corruptions,
+                                    output_witness_b.first_post_failover,
+                                    failover_timing_emitted));
+    } else {
+        std::printf(
+            "supervisor: shutdown state=%d a_records=%llu a_corruptions=%llu a_first_post_failover=%d "
+            "b_records=%llu b_corruptions=%llu b_first_post_failover=%d failover_timing_emitted=%d\n",
+            static_cast<int>(state),
+            static_cast<unsigned long long>(output_witness_a.records),
+            static_cast<unsigned long long>(output_witness_a.corruptions),
+            output_witness_a.first_post_failover ? 1 : 0,
+            static_cast<unsigned long long>(output_witness_b.records),
+            static_cast<unsigned long long>(output_witness_b.corruptions),
+            output_witness_b.first_post_failover ? 1 : 0,
+            failover_timing_emitted ? 1 : 0);
+        std::fflush(stdout);
+    }
     region.detach();
     if (state == SupervisorState::kDegraded || state == SupervisorState::kFailsafe) {
         return 4;

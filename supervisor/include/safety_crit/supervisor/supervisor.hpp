@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <limits>
+#include <string>
 #include <string_view>
 
 #include "safety_crit/shared_memory/shared_region.hpp"
@@ -58,6 +59,11 @@ struct SupervisorConfig {
     // must not arm the SIGCONT/SIGKILL path (the grace also bounds the window
     // in the unlikely case the first post-failover record never arrives).
     std::uint64_t handoff_grace_ms{750};
+    // T-0034 (DEC-0014 §3/§4): opt-in consolidated event log path. Empty
+    // (default) keeps every witness line byte-identical to Phase 5; when set,
+    // witness events go to stdout as JSON AND to the log via the T-0033
+    // writer, and the path is handed to forked workers and the monitor.
+    std::string event_log_path{};
 };
 
 enum class SupervisorState : std::uint8_t {

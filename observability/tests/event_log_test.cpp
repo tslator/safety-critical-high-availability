@@ -376,6 +376,37 @@ SAFETY_CRIT_TEST_CASE(EventLog, UnsupportedSchemaRejected) {
     SAFETY_CRIT_ASSERT(record.event == "x");
 }
 
+SAFETY_CRIT_TEST_CASE(EventLog, StdoutFormatPinsEnvelopeWithoutSeq) {
+    // T-0034 (DEC-0014 §4): the stdout witness form is the record envelope
+    // without the schema/seq bookkeeping, extra fields verbatim after
+    // "event".
+    std::string line;
+    SAFETY_CRIT_ASSERT(format_stdout_event(42u, LogLevel::kInfo, "supervisor", "shutdown_summary",
+                                           "\"state\":6", line));
+    SAFETY_CRIT_ASSERT(line ==
+                       "{\"ts\":42,\"level\":\"info\",\"component\":\"supervisor\","
+                       "\"event\":\"shutdown_summary\",\"state\":6}");
+    SAFETY_CRIT_ASSERT(line.find("seq") == std::string::npos);
+    SAFETY_CRIT_ASSERT(line.find("schema") == std::string::npos);
+
+    SAFETY_CRIT_ASSERT(format_stdout_event(7u, LogLevel::kWarn, "worker", "worker_stopped", "",
+                                           line));
+    SAFETY_CRIT_ASSERT(line ==
+                       "{\"ts\":7,\"level\":\"warn\",\"component\":\"worker\","
+                       "\"event\":\"worker_stopped\"}");
+    SAFETY_CRIT_ASSERT(format_stdout_event(8u, LogLevel::kError, "monitor", "worker_crashed",
+                                           "\"worker\":0", line));
+    SAFETY_CRIT_ASSERT(line.find("\"level\":\"error\"") != std::string::npos);
+
+    // Rejections mirror the append contract (extra must be key:value text,
+    // no structural JSON punctuation, no embedded newlines).
+    SAFETY_CRIT_ASSERT(!format_stdout_event(1u, LogLevel::kInfo, "bad component!", "e", "", line));
+    SAFETY_CRIT_ASSERT(!format_stdout_event(1u, LogLevel::kInfo, "c", "bad event!", "", line));
+    SAFETY_CRIT_ASSERT(!format_stdout_event(1u, LogLevel::kInfo, "c", "e", "state:6", line));
+    SAFETY_CRIT_ASSERT(!format_stdout_event(1u, LogLevel::kInfo, "c", "e", "\"a\":1}", line));
+    SAFETY_CRIT_ASSERT(!format_stdout_event(1u, LogLevel::kInfo, "c", "e", "\"a\":1\n", line));
+}
+
 #if !SAFETY_CRIT_OBS_SANITIZED
 SAFETY_CRIT_TEST_CASE(EventLog, ConcurrentWriterAtomicity) {
     // T-0033 AC: >= 4 processes x >= 100 interleaved records append to one

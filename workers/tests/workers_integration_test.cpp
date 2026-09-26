@@ -18,6 +18,7 @@
 #include <thread>
 #include <vector>
 
+#include "safety_crit/observability/event_log.hpp"
 #include "safety_crit/shared_memory/atomic_flags.hpp"
 #include "safety_crit/shared_memory/shm_attach.hpp"
 #include "safety_crit/shared_memory/shared_region.hpp"
@@ -318,6 +319,110 @@ SAFETY_CRIT_TEST_CASE(workers_integration, PromotionAcknowledgementUsesNewGenera
         *fixture.region(), promoted, acknowledged));
     SAFETY_CRIT_ASSERT(acknowledged.logical_ring == 0u);
     SAFETY_CRIT_ASSERT(acknowledged.epoch == replacement.epoch);
+}
+
+// T-0034 (DEC-0014 Â§4): lifecycle events land in the consolidated
+// event log (component "worker", instance = index) with continuous per-key
+// sequences; field sets and orders are pinned here (published vocabulary).
+SAFETY_CRIT_TEST_CASE(workers_integration, EventLogRecordsHotLifecycle) {
+    RegionFixture fixture("eventlog_hot");
+    SAFETY_CRIT_ASSERT(fixture.ok());
+    const std::string log_path = "/tmp/safety_crit_ha_wevt_" +
+                                 std::to_string(static_cast<long>(::getpid())) + ".jsonl";
+    ::unlink(log_path.c_str());
+
+    WorkerConfig cfg = hot_config(0, 5, std::chrono::milliseconds(1));
+    cfg.event_log_path = log_path;
+    const pid_t child = fork_worker(cfg, fixture.name());
+    SAFETY_CRIT_ASSERT(child > 0);
+    const int status = timed_wait(child, 10000);
+    SAFETY_CRIT_ASSERT(status >= 0);
+    SAFETY_CRIT_ASSERT(WIFEXITED(status));
+    SAFETY_CRIT_ASSERT(WEXITSTATUS(status) == 0);
+
+    safety_crit::observability::EventLogReader reader{};
+    std::error_code ec;
+    SAFETY_CRIT_ASSERT(reader.open(log_path, ec));
+    std::string events;
+    std::string all_raw;
+    std::size_t count = 0;
+    for (;;) {
+        safety_crit::observability::EventRecord record{};
+        std::string read_error;
+        const auto got = reader.read_next(record, read_error);
+        if (got == safety_crit::observability::ReadStatus::kEnd) {
+            break;
+        }
+        SAFETY_CRIT_ASSERT(got == safety_crit::observability::ReadStatus::kOk);
+        SAFETY_CRIT_ASSERT(record.component == "worker");
+        SAFETY_CRIT_ASSERT(record.instance.has_value());
+        SAFETY_CRIT_ASSERT(record.instance.value() == 0);
+        ++count;
+        SAFETY_CRIT_ASSERT(record.seq == count);
+        events += record.event;
+        events += ';';
+        all_raw += record.raw;
+        all_raw += '\n';
+    }
+    SAFETY_CRIT_ASSERT(reader.gaps_total() == 0);
+    SAFETY_CRIT_ASSERT(events == "worker_started;worker_stopped;");
+    SAFETY_CRIT_ASSERT(all_raw.find("\"role\":\"hot\",\"ring\":0") != std::string::npos);
+    SAFETY_CRIT_ASSERT(all_raw.find(
+                           "\"role\":\"hot\",\"reason\":\"completed\",\"ticks\":5,"
+                           "\"overruns\":0") != std::string::npos);
+    ::unlink(log_path.c_str());
+}
+
+SAFETY_CRIT_TEST_CASE(workers_integration, EventLogRecordsStandbyStopSignal) {
+    RegionFixture fixture("eventlog_standby");
+    SAFETY_CRIT_ASSERT(fixture.ok());
+    const std::string log_path = "/tmp/safety_crit_ha_wevt2_" +
+                                 std::to_string(static_cast<long>(::getpid())) + ".jsonl";
+    ::unlink(log_path.c_str());
+
+    WorkerConfig cfg = hot_config(2, 1000, std::chrono::milliseconds(1));
+    cfg.role = WorkerRole::kStandby;
+    cfg.logical_ring = safety_crit::shared_memory::kUnassignedPhysicalOwner;
+    cfg.event_log_path = log_path;
+    const pid_t child = fork_worker(cfg, fixture.name());
+    SAFETY_CRIT_ASSERT(child > 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    SAFETY_CRIT_ASSERT(::kill(child, SIGTERM) == 0);
+    const int status = timed_wait(child, 5000);
+    SAFETY_CRIT_ASSERT(status >= 0);
+    SAFETY_CRIT_ASSERT(WIFEXITED(status));
+    SAFETY_CRIT_ASSERT(WEXITSTATUS(status) == 0);
+
+    safety_crit::observability::EventLogReader reader{};
+    std::error_code ec;
+    SAFETY_CRIT_ASSERT(reader.open(log_path, ec));
+    std::string events;
+    std::string all_raw;
+    std::size_t count = 0;
+    for (;;) {
+        safety_crit::observability::EventRecord record{};
+        std::string read_error;
+        const auto got = reader.read_next(record, read_error);
+        if (got == safety_crit::observability::ReadStatus::kEnd) {
+            break;
+        }
+        SAFETY_CRIT_ASSERT(got == safety_crit::observability::ReadStatus::kOk);
+        SAFETY_CRIT_ASSERT(record.component == "worker");
+        ++count;
+        SAFETY_CRIT_ASSERT(record.seq == count);
+        events += record.event;
+        events += ';';
+        all_raw += record.raw;
+        all_raw += '\n';
+    }
+    SAFETY_CRIT_ASSERT(reader.gaps_total() == 0);
+    SAFETY_CRIT_ASSERT(events == "worker_started;worker_stopped;");
+    // Unassigned standby: no "ring" field on worker_started (vocabulary).
+    SAFETY_CRIT_ASSERT(all_raw.find("\"role\":\"standby\",\"reason\":\"stop_signal\"") !=
+                       std::string::npos);
+    SAFETY_CRIT_ASSERT(all_raw.find("\"role\":\"standby\"}") != std::string::npos);
+    SAFETY_CRIT_ASSERT(all_raw.find("\"ring\"") == std::string::npos);
+    ::unlink(log_path.c_str());
 }
 
 #endif  // SAFETY_CRIT_P2_SANITIZED

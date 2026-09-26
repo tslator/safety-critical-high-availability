@@ -12,6 +12,8 @@
 #include <thread>
 
 #include "safety_crit/supervisor/supervisor.hpp"
+#include "safety_crit/supervisor/witness_events.hpp"
+#include "safety_crit/observability/event_log.hpp"
 #include "safety_crit/shared_memory/atomic_flags.hpp"
 #include "safety_crit/shared_memory/shm_attach.hpp"
 #include "safety_crit/shared_memory/shared_region.hpp"
@@ -815,5 +817,145 @@ SAFETY_CRIT_TEST_CASE(Supervisor, StallAfterHandoffWindowStillRecovers) {
 
     std::error_code ec;
     std::filesystem::remove_all(pid_dir, ec);
+    (void)safety_crit::shared_memory::SharedRegionHandle::destroy(region_name.c_str());
+}
+
+// --- T-0034 (DEC-0014 Â§4): structured witness events ---------------------------
+
+SAFETY_CRIT_TEST_CASE(Supervisor, WitnessFieldBuildersPinVocabulary) {
+    using namespace safety_crit::supervisor;
+    SAFETY_CRIT_ASSERT(failover_started_fields(1) == "\"worker\":1");
+    SAFETY_CRIT_ASSERT(failover_recovered_fields(42) == "\"latency_ms\":42");
+    SAFETY_CRIT_ASSERT(ring_degraded_fields(1) ==
+                       "\"ring\":1,\"reason\":\"standby_exhausted\"");
+    SAFETY_CRIT_ASSERT(stall_recovered_fields(2, 9) == "\"worker\":2,\"epoch\":9");
+    SAFETY_CRIT_ASSERT(stall_escalated_fields(2, 9) == "\"worker\":2,\"epoch\":9");
+    SAFETY_CRIT_ASSERT(
+        shutdown_summary_fields(6, 100, 2, true, 50, 0, false, true) ==
+        "\"state\":6,\"a_records\":100,\"a_corruptions\":2,\"a_first_post_failover\":1,"
+        "\"b_records\":50,\"b_corruptions\":0,\"b_first_post_failover\":0,"
+        "\"failover_timing_emitted\":1");
+}
+
+SAFETY_CRIT_TEST_CASE(Supervisor, NoJsonWitnessesWithoutEventLogFlag) {
+    // Negative AC (T-0034): with `--event-log` absent the supervisor is
+    // byte-identical to Phase 5 â plain witness lines only, no JSON
+    // envelope anywhere on stdout.
+    const std::string region_name = "/sc_t0034n_" + std::to_string(static_cast<long>(::getpid()));
+    const auto pid_dir = std::filesystem::temp_directory_path() /
+                         ("sc_t0034n_pid_" + std::to_string(static_cast<long>(::getpid())));
+    (void)safety_crit::shared_memory::SharedRegionHandle::destroy(region_name.c_str());
+    std::error_code ec;
+
+    int fds[2] = {-1, -1};
+    SAFETY_CRIT_ASSERT(::pipe(fds) == 0);
+    const pid_t supervisor = ::fork();
+    SAFETY_CRIT_ASSERT(supervisor >= 0);
+    if (supervisor == 0) {
+        ::dup2(fds[1], STDOUT_FILENO);
+        ::close(fds[0]);
+        ::close(fds[1]);
+        safety_crit::supervisor::SupervisorConfig config;
+        config.region_name = region_name.c_str();
+        config.pid_dir = pid_dir;
+        config.worker_ticks = 100000;
+        config.runtime_ms = 400;
+        ::_exit(safety_crit::supervisor::run_supervisor(config));
+    }
+    ::close(fds[1]);
+
+    std::string output;
+    SAFETY_CRIT_ASSERT(wait_for_output(fds[0], output, "supervisor: shutdown state=",
+                                       std::chrono::milliseconds(4000)));
+    int status = 0;
+    SAFETY_CRIT_ASSERT(::waitpid(supervisor, &status, 0) == supervisor);
+    SAFETY_CRIT_ASSERT(WIFEXITED(status));
+    ::close(fds[0]);
+
+    // Monitor JSON lines are pre-existing Phase 5 output; the supervisor's
+    // own witnesses must stay plain text without the flag.
+    SAFETY_CRIT_ASSERT(output.find("\"component\":\"supervisor\"") == std::string::npos);
+    SAFETY_CRIT_ASSERT(output.find("\"event\":\"shutdown_summary\"") == std::string::npos);
+
+    std::filesystem::remove_all(pid_dir, ec);
+    (void)safety_crit::shared_memory::SharedRegionHandle::destroy(region_name.c_str());
+}
+
+SAFETY_CRIT_TEST_CASE(Supervisor, EventLogCapturesWitnessRecords) {
+    const std::string region_name = "/sc_t0034w_" + std::to_string(static_cast<long>(::getpid()));
+    const auto pid_dir = std::filesystem::temp_directory_path() /
+                         ("sc_t0034w_pid_" + std::to_string(static_cast<long>(::getpid())));
+    const auto log_path = std::filesystem::temp_directory_path() /
+                          ("sc_t0034w_" + std::to_string(static_cast<long>(::getpid())) +
+                           ".jsonl");
+    (void)safety_crit::shared_memory::SharedRegionHandle::destroy(region_name.c_str());
+    std::error_code ec;
+    std::filesystem::remove(log_path, ec);
+
+    int fds[2] = {-1, -1};
+    SAFETY_CRIT_ASSERT(::pipe(fds) == 0);
+    const pid_t supervisor = ::fork();
+    SAFETY_CRIT_ASSERT(supervisor >= 0);
+    if (supervisor == 0) {
+        ::dup2(fds[1], STDOUT_FILENO);
+        ::close(fds[0]);
+        ::close(fds[1]);
+        safety_crit::supervisor::SupervisorConfig config;
+        config.region_name = region_name.c_str();
+        config.pid_dir = pid_dir;
+        config.worker_ticks = 100000;
+        config.runtime_ms = 600;
+        config.event_log_path = log_path.string();
+        ::_exit(safety_crit::supervisor::run_supervisor(config));
+    }
+    ::close(fds[1]);
+
+    std::string output;
+    SAFETY_CRIT_ASSERT(wait_for_output(fds[0], output, "\"event\":\"shutdown_summary\"",
+                                       std::chrono::milliseconds(4000)));
+    int status = 0;
+    SAFETY_CRIT_ASSERT(::waitpid(supervisor, &status, 0) == supervisor);
+    SAFETY_CRIT_ASSERT(WIFEXITED(status));
+    SAFETY_CRIT_ASSERT(WEXITSTATUS(status) == 0);
+    ::close(fds[0]);
+
+    // Flag set: stdout carries the JSON envelope only â the Phase 5 plain
+    // witness lines are replaced, not duplicated.
+    SAFETY_CRIT_ASSERT(output.find("\"component\":\"supervisor\",\"event\":\"shutdown_summary\"") !=
+                       std::string::npos);
+    SAFETY_CRIT_ASSERT(output.find("supervisor: shutdown state=") == std::string::npos);
+
+    // The consolidated log holds schema v1 records with a continuous
+    // supervisor sequence ending at shutdown_summary (reader contract,
+    // T-0033). Children share the same file (monitor component).
+    safety_crit::observability::EventLogReader reader{};
+    SAFETY_CRIT_ASSERT(reader.open(log_path.string(), ec));
+    std::string last_supervisor_event;
+    bool saw_monitor = false;
+    std::size_t supervisor_records = 0;
+    for (;;) {
+        safety_crit::observability::EventRecord record{};
+        std::string read_error;
+        const auto got = reader.read_next(record, read_error);
+        if (got == safety_crit::observability::ReadStatus::kEnd) {
+            break;
+        }
+        SAFETY_CRIT_ASSERT(got == safety_crit::observability::ReadStatus::kOk);
+        if (record.component == "supervisor") {
+            ++supervisor_records;
+            SAFETY_CRIT_ASSERT(record.seq == supervisor_records);
+            last_supervisor_event = record.event;
+        }
+        if (record.component == "monitor") {
+            saw_monitor = true;
+        }
+    }
+    SAFETY_CRIT_ASSERT(reader.gaps_total() == 0);
+    SAFETY_CRIT_ASSERT(supervisor_records >= 1u);
+    SAFETY_CRIT_ASSERT(last_supervisor_event == "shutdown_summary");
+    SAFETY_CRIT_ASSERT(saw_monitor);
+
+    std::filesystem::remove_all(pid_dir, ec);
+    std::filesystem::remove(log_path, ec);
     (void)safety_crit::shared_memory::SharedRegionHandle::destroy(region_name.c_str());
 }

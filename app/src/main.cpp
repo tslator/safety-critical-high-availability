@@ -35,13 +35,13 @@ void print_usage(std::ostream& out) {
         << "       safety-critical-ha worker --id <a|b|c> [--role hot|standby]\n"
         << "           [--logical-id <a|b|c>] [--generation N] [--corrupt-hook]\n"
         << "           [--ticks N] [--tick-interval-ms MS] [--budget-us US]\n"
-        << "           [--region NAME] [--pid-dir DIR]\n"
+        << "           [--region NAME] [--pid-dir DIR] [--event-log PATH]\n"
         << "       safety-critical-ha monitor [--interval-ms MS]\n"
         << "           [--stall-threshold-ms MS] [--region NAME]\n"
-        << "           [--pid-dir DIR] [--polls N]\n"
+        << "           [--pid-dir DIR] [--polls N] [--event-log PATH]\n"
         << "       safety-critical-ha supervisor [--runtime-ms MS]\n"
         << "           [--stall-grace-ms MS] [--region NAME] [--pid-dir DIR]\n"
-        << "           [--ticks N]\n"
+        << "           [--ticks N] [--event-log PATH]\n"
         << "       safety-critical-ha perturb <crash|stall|recover-stall|corrupt|\n"
         << "           double-fault|supervisor-kill|supervisor-exit> --target <pid>\n"
         << "           [--target2 <pid>] [--out <path>]\n"
@@ -169,6 +169,12 @@ int run_worker_command(int argc, char* argv[]) {
                 return 2;
             }
             pid_dir = argv[i];
+        } else if (arg == "--event-log") {
+            if (!next_value(value) || value.empty()) {
+                std::cerr << "worker: --event-log requires a file path\n";
+                return 2;
+            }
+            cfg.event_log_path = std::string(value);
         } else {
             std::cerr << "worker: unknown option: " << arg << "\n";
             return 2;
@@ -235,6 +241,12 @@ int run_monitor_command(int argc, char* argv[]) {
                 return 2;
             }
             pid_dir = argv[i];
+        } else if (arg == "--event-log") {
+            if (!next_value(value) || value.empty()) {
+                std::cerr << "monitor: --event-log requires a file path\n";
+                return 2;
+            }
+            cfg.event_log_path = std::string(value);
         } else {
             std::cerr << "monitor: unknown option: " << arg << "\n";
             return 2;
@@ -278,6 +290,8 @@ int run_supervisor_command(int argc, char* argv[]) {
             cfg.region_name = argv[i];
         } else if (arg == "--pid-dir" && !value.empty()) {
             cfg.pid_dir = argv[i];
+        } else if (arg == "--event-log" && !value.empty()) {
+            cfg.event_log_path = std::string(value);
         } else {
             std::cerr << "supervisor: unknown or invalid option: " << arg << "\n";
             return 2;

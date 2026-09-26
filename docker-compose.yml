@@ -22,6 +22,10 @@ services:
       - /safety_crit_region
       - --pid-dir
       - /run/safety-critical-ha
+      # T-0034 (DEC-0014 §4): consolidated structured event log (supervisor
+      # witness events + worker lifecycle + monitor alerts/report).
+      - --event-log
+      - /run/safety-critical-ha/events.jsonl
     cpus: "1.5"
     mem_limit: 512m
     cap_add:

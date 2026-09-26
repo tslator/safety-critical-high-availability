@@ -2,6 +2,7 @@
 add_library(safety_crit_workers STATIC
     src/worker_config.cpp
     src/signals.cpp
+    src/lifecycle_events.cpp
     src/worker_entry.cpp
     src/pidfile.cpp
 )
@@ -12,7 +13,8 @@ target_include_directories(safety_crit_workers
 )
 target_compile_features(safety_crit_workers PUBLIC cxx_std_20)
 target_link_libraries(safety_crit_workers PUBLIC safety_crit::shared_memory
-                                               safety_crit::runtime)
+                                               safety_crit::runtime
+                                               safety_crit::observability)
 
 safety_crit_apply_warnings(safety_crit_workers)
 safety_crit_apply_sanitizers(safety_crit_workers)

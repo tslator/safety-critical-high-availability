@@ -19,7 +19,7 @@ perturb stall --target "${hot_a}" | tee -a "${REPLAY}" >/dev/null
 wait_log '"event":"worker_stalled","worker":0' 10
 # The supervisor issues its own bounded SIGCONT immediately on the alert;
 # nothing re-stops the worker, so recovery is deterministic.
-wait_log 'supervisor: stall recovered for physical 0 at epoch' 10
+wait_log '"event":"stall_recovered","worker":0' 10
 wait_log '"event":"worker_recovered","worker":0' 10
 wait_healthy 20
 

@@ -24,16 +24,16 @@ perturb corrupt --target "${hot_a}" | tee -a "${REPLAY}" >/dev/null
 sleep 1
 hot_a_after="$(worker_pid 0)"
 [ "${hot_a_after}" = "${hot_a}" ] || fail "worker restarted: corruption path must not crash it"
-supervisor_log | grep -q 'state=6' && fail "supervisor entered failsafe on tolerated corruption"
+supervisor_log | grep -q '"state":6' && fail "supervisor entered failsafe on tolerated corruption"
 wait_healthy 10
 
 log "S3: stopping supervisor gracefully to read the witness summary"
 compose exec -T supervisor kill -TERM 1 2>/dev/null || true
 # The restart policy may bring a fresh supervisor up again immediately, so
 # wait on the shutdown witness line itself, not on process liveness.
-wait_log 'supervisor: shutdown state=' 20
+wait_log '"event":"shutdown_summary"' 20
 
-corruptions="$(supervisor_log | grep -oE 'a_corruptions=[0-9]+' | tail -1 | cut -d= -f2)"
+corruptions="$(supervisor_log | grep -oE '"a_corruptions":[0-9]+' | tail -1 | cut -d: -f2)"
 [ -n "${corruptions}" ] || fail "no shutdown witness found"
 [ "${corruptions}" -ge 1 ] || fail "expected a_corruptions >= 1, got ${corruptions}"
 

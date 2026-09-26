@@ -6,12 +6,15 @@
 #include <cstdio>
 #include <cstdlib>
 #include <stop_token>
+#include <string_view>
 #include <thread>
 
+#include "safety_crit/observability/event_log.hpp"
+#include "safety_crit/runtime/scheduling.hpp"
 #include "safety_crit/shared_memory/atomic_flags.hpp"
 #include "safety_crit/shared_memory/shm_attach.hpp"
 #include "safety_crit/shared_memory/shared_region.hpp"
-#include "safety_crit/runtime/scheduling.hpp"
+#include "safety_crit/workers/lifecycle_events.hpp"
 #include "safety_crit/workers/signals.hpp"
 #include "safety_crit/workers/work_loop.hpp"
 #include "safety_crit/workers/workload.hpp"
@@ -22,6 +25,19 @@ static_assert(sizeof(ProcessedData) <= shared_memory::kDefaultSlotBytes,
               "worker payload must fit one region slot");
 
 namespace {
+
+// T-0034 (DEC-0014 §4): log-file-only event emission. Emission happens
+// strictly between ticks (never in the ring hot path); a failed append is
+// swallowed -- the writer is the durability layer and its reader's gap
+// detection surfaces persistence loss.
+void emit_worker_event(observability::EventLogWriter* log, observability::LogLevel level,
+                       std::string_view event, std::string_view fields) {
+    if (log == nullptr || !log->is_open()) {
+        return;
+    }
+    std::error_code ec;
+    (void)log->append(level, event, fields, ec);
+}
 
 // Sleep `total` in 1 ms slices, aborting early when the stop flag fires.
 // Keeps SIGTERM stop latency well under one tick without SA_RESTART tricks;
@@ -39,7 +55,7 @@ void sleep_slice_slice(std::chrono::milliseconds total,
 }
 
 int run_hot(shared_memory::SharedRegion& region, const WorkerConfig& cfg,
-            signals::SignalState& signal_state) {
+            signals::SignalState& signal_state, observability::EventLogWriter* log) {
     shared_memory::OwnershipToken ownership;
     if (!acknowledge_ownership(region, cfg, ownership)) {
         std::fprintf(stderr, "worker %u: ownership acknowledgement failed\n", cfg.worker_idx);
@@ -47,14 +63,20 @@ int run_hot(shared_memory::SharedRegion& region, const WorkerConfig& cfg,
     }
     std::atomic<std::uint64_t>& status = region.worker_status[cfg.worker_idx].status;
     shared_memory::set_status(status, shared_memory::to_bits(shared_memory::WorkerStatusFlag::kRunning));
+    // T-0034: ownership confirmed; this process is producing on its ring
+    // (also how a promoted standby's takeover shows up in the log).
+    emit_worker_event(log, observability::LogLevel::kInfo, kEventWorkerStarted,
+                      worker_started_fields(WorkerRole::kHot, true, cfg.logical_ring));
 
     std::stop_source src;  // never requested; stop rides the signal flag
+    std::atomic<bool> ownership_lost{false};
     auto result = run_work_loop(
         cfg, &status, src.get_token(), signal_state.stop_requested,
-        [&region, &cfg, &ownership, &src, &signal_state](const ProcessedData& payload) {
+        [&region, &cfg, &ownership, &src, &signal_state, &ownership_lost](const ProcessedData& payload) {
             // A process that loses its generation must stop retrying rather
             // than publish to a ring now owned by its replacement.
             if (!shared_memory::ownership_valid(region, ownership)) {
+                ownership_lost = true;
                 src.request_stop();
                 return false;
             }
@@ -80,6 +102,19 @@ int run_hot(shared_memory::SharedRegion& region, const WorkerConfig& cfg,
     // clear").
     shared_memory::set_status(status, shared_memory::to_bits(shared_memory::WorkerStatusFlag::kIdle));
 
+    // T-0034: lifecycle witnesses, between ticks (the overrun record carries
+    // the same count as the plain summary line; emitted only when non-zero).
+    if (result.overruns > 0u) {
+        emit_worker_event(log, observability::LogLevel::kWarn, kEventWorkerDeadlineOverrun,
+                          worker_deadline_overrun_fields(result.overruns));
+    }
+    const char* stop_reason = ownership_lost ? kStopReasonOwnershipLost
+                            : (signal_state.stop_requested != 0 ? kStopReasonSignal
+                                                                : kStopReasonCompleted);
+    emit_worker_event(log, observability::LogLevel::kInfo, kEventWorkerStopped,
+                      worker_stopped_hot_fields(stop_reason, result.ticks_completed,
+                                                result.overruns));
+
     std::printf("worker %u (hot): %llu ticks, %llu overruns\n", cfg.worker_idx,
                 static_cast<unsigned long long>(result.ticks_completed),
                 static_cast<unsigned long long>(result.overruns));
@@ -87,9 +122,14 @@ int run_hot(shared_memory::SharedRegion& region, const WorkerConfig& cfg,
 }
 
 int run_standby(shared_memory::SharedRegion& region, const WorkerConfig& cfg,
-                signals::SignalState& signal_state) {
+                signals::SignalState& signal_state, observability::EventLogWriter* log) {
     std::atomic<std::uint64_t>& status = region.worker_status[cfg.worker_idx].status;
     shared_memory::set_status(status, shared_memory::to_bits(shared_memory::WorkerStatusFlag::kIdle));
+    emit_worker_event(log, observability::LogLevel::kInfo, kEventWorkerStarted,
+                      worker_started_fields(WorkerRole::kStandby,
+                                            cfg.logical_ring !=
+                                                shared_memory::kUnassignedPhysicalOwner,
+                                            cfg.logical_ring));
 
     // Warm standby: observe ownership records, push nothing until the
     // supervisor has transferred one logical ring to this process.
@@ -110,12 +150,14 @@ int run_standby(shared_memory::SharedRegion& region, const WorkerConfig& cfg,
             promoted.logical_ring = static_cast<std::uint32_t>(logical_ring);
             if (acknowledge_ownership(region, promoted, token)) {
                 promoted.process_generation = token.process_generation;
-                return run_hot(region, promoted, signal_state);
+                return run_hot(region, promoted, signal_state, log);
             }
         }
         ++polls;
         sleep_slice_slice(std::chrono::milliseconds(100), signal_state.stop_requested);
     }
+    emit_worker_event(log, observability::LogLevel::kInfo, kEventWorkerStopped,
+                      worker_stopped_standby_fields(polls));
     std::printf("worker %u (standby): %llu status polls\n", cfg.worker_idx,
                 static_cast<unsigned long long>(polls));
     return 0;
@@ -185,11 +227,28 @@ int run_worker(const WorkerConfig& cfg, const char* region_name, const char* pid
         }
     }
 
+    // T-0034 (DEC-0014 §4): open the lifecycle event log (component "worker",
+    // instance = worker index). A failed open degrades to log-less running:
+    // telemetry loss must never take down a live worker.
+    observability::EventLogWriter event_log{};
+    observability::EventLogWriter* log = nullptr;
+    if (!cfg.event_log_path.empty()) {
+        observability::EventLogWriterOptions options{};
+        options.instance = static_cast<std::int64_t>(cfg.worker_idx);
+        std::error_code log_error;
+        if (event_log.open(cfg.event_log_path, "worker", options, log_error)) {
+            log = &event_log;
+        } else {
+            std::fprintf(stderr, "worker: event log unavailable (%s), log-less\n",
+                         log_error.message().c_str());
+        }
+    }
+
     int rc = 0;
     if (effective_cfg.role == WorkerRole::kHot) {
-        rc = run_hot(*handle.get(), effective_cfg, signal_state);
+        rc = run_hot(*handle.get(), effective_cfg, signal_state, log);
     } else {
-        rc = run_standby(*handle.get(), effective_cfg, signal_state);
+        rc = run_standby(*handle.get(), effective_cfg, signal_state, log);
     }
 
     // Clean exit only: the IDLE status published above plus pidfile removal

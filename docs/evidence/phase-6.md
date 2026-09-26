@@ -114,3 +114,67 @@ evidence here or in `NOTES.md`.
   `git status` shows zero changes under `shared-memory/`; region layout
   untouched (v4).
 - Hosted CI: pending (recorded at phase integration if not per task).
+
+## T-0034 Result
+
+- Implementation: `--event-log <path>` flag on the `worker`, `monitor`, and
+  `supervisor` subcommands (default off; absent → Phase 5 byte-identical
+  output). New supervisor vocabulary + dual-write sink in
+  `supervisor/include/safety_crit/supervisor/witness_events.hpp` (+
+  `src/witness_events.cpp`): `failover_started`, `failover_recovered`
+  (carries `latency_ms`), `ring_degraded`, `stall_recovered`,
+  `stall_escalated`, `shutdown_summary`; every Phase 5 plain witness `printf`
+  site in `supervisor.cpp` is now null-sink gated
+  (`if (witness != nullptr) witness->emit(...) else printf(...)`), emitting
+  the JSON envelope on stdout plus an event-log record (component
+  "supervisor"). New worker lifecycle vocabulary in
+  `workers/include/safety_crit/workers/lifecycle_events.hpp` (+
+  `src/lifecycle_events.cpp`): `worker_started`, `worker_stopped`
+  (reason `completed`/`stop_signal`/`ownership_lost`),
+  `worker_deadline_overrun` — emitted strictly between ticks in
+  `worker_entry.cpp` (never in the ring hot path), log-file-only (no stdout
+  change, per DEC-0009 #6); a lost-ownership push closure sets an atomic
+  flag surfaced as the `ownership_lost` stop reason. New `format_stdout_event`
+  + `now_unix_ns` helpers in `observability/` render the stdout envelope
+  (record content without `schema`/`seq`). Monitor report/alerts mirror to
+  the event log via `EventLogWriter` (component "monitor") with the stdout
+  JSON stream unchanged. Verbatim monitor-line forwarding and exit codes
+  0/3/4 unchanged.
+- Consumer migration (lockstep): all Compose scenario greps moved from
+  Phase 5 plain-text witnesses to JSON field/event matches
+  (`s1_crash` `latency_ms`, `s2_stall` `stall_recovered`, `s3_corrupt`
+  `shutdown_summary`+`a_corruptions`, `s5_double_fault` `ring_degraded`,
+  `s1_replay` event categories + shutdown-summary parser on
+  `shutdown_summary`/`state`/records/corruptions). `docker-compose.yml`
+  supervisor passes `--event-log /run/safety-critical-ha/events.jsonl`.
+  `scripts/phase4-failover-timing.sh` and `failover-smoke.sh` verified
+  needing no change (run without the flag / already JSON).
+- Tests (both frameworks): `EventLog.StdoutFormatPinsEnvelopeWithoutSeq`
+  (envelope shape, no `seq`/`schema`, extra-field rejection rules);
+  `Supervisor.WitnessFieldBuildersPinVocabulary` (pinned field sets/orders,
+  booleans as 0/1); `Supervisor.EventLogCapturesWitnessRecords` (fork,
+  `--event-log`: stdout carries supervisor JSON, plain witnesses replaced,
+  consolidated log has gap-free supervisor seq ending at `shutdown_summary`,
+  monitor records co-located); `Supervisor.NoJsonWitnessesWithoutEventLogFlag`
+  (negative AC: flag absent → no supervisor JSON anywhere on stdout);
+  `workers_integration.EventLogRecordsHotLifecycle` +
+  `EventLogRecordsStandbyStopSignal` (fork → event log has continuous
+  `worker_started`/`worker_stopped` seq with pinned reason/role/ring fields;
+  standby omits `ring`); `monitors_integration.EventLogMirrorsStdoutStream`
+  (fork → monitor log mirrors stdout JSON with gap-free seq, report closes
+  the stream, stdout shape unchanged). Fork-based cases plain-build only
+  (established idiom).
+- GoogleTest 167/167; Catch2 167/167.
+- ASan+UBSan (GoogleTest): 147/147, zero reports.
+- TSan (Catch2) under `setarch --addr-no-randomize`,
+  `TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1`: 147/147, zero
+  race reports.
+- Replay comparison: S1-R parser migrated to `shutdown_summary` JSON record;
+  determinism semantics (DEC-0012 #8) unchanged — validated at phase
+  integration (T-0039) against the running stack.
+- No shared-memory code touched: `git status` shows zero changes under
+  `shared-memory/`; region layout untouched (v4).
+- Docker build + Compose smoke + scenarios against the new format: run in
+  the phase integration task (T-0039); no smoke regression introduced in
+  the native matrix.
+- Hosted CI: pending (recorded at phase integration if not per task).

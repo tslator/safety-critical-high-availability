@@ -4,10 +4,12 @@
 #include <csignal>
 #include <cstdio>
 #include <stop_token>
+#include <string_view>
 
 #include "safety_crit/monitors/json_lines.hpp"
 #include "safety_crit/monitors/monitor_loop.hpp"
 #include "safety_crit/monitors/pidfile_liveness.hpp"
+#include "safety_crit/observability/event_log.hpp"
 #include "safety_crit/runtime/scheduling.hpp"
 #include "safety_crit/shared_memory/shm_attach.hpp"
 #include "safety_crit/shared_memory/shared_region.hpp"
@@ -55,7 +57,22 @@ int run_monitor(const MonitorConfig& cfg, const char* region_name, const char* p
     }
 
     const std::filesystem::path pid_path_dir{pid_dir};
-    auto emit_fn = [](const Alert& alert) {
+    // T-0034 (DEC-0014 §4): append-only mirror of the stdout JSON stream
+    // (singleton component "monitor"). A failed open degrades to
+    // stdout-only: the forwarded stream stays authoritative.
+    observability::EventLogWriter event_log{};
+    observability::EventLogWriter* log = nullptr;
+    if (!cfg.event_log_path.empty()) {
+        observability::EventLogWriterOptions options{};
+        std::error_code log_error;
+        if (event_log.open(cfg.event_log_path, "monitor", options, log_error)) {
+            log = &event_log;
+        } else {
+            std::fprintf(stderr, "monitor: event log unavailable (%s), stdout-only\n",
+                         log_error.message().c_str());
+        }
+    }
+    auto emit_fn = [log](const Alert& alert) {
         const auto ts = std::chrono::duration_cast<std::chrono::nanoseconds>(
                             std::chrono::system_clock::now().time_since_epoch())
                             .count();
@@ -63,6 +80,17 @@ int run_monitor(const MonitorConfig& cfg, const char* region_name, const char* p
         std::fwrite(line.data(), 1, line.size(), stdout);
         std::fputc('\n', stdout);
         std::fflush(stdout);  // alerts must be visible immediately
+        if (log != nullptr && log->is_open()) {
+            observability::LogLevel level = observability::LogLevel::kInfo;
+            (void)observability::level_from_name(level_for(alert.kind), level);
+            char fields[32];
+            const int n = std::snprintf(fields, sizeof(fields), "\"worker\":%zu", alert.worker);
+            if (n > 0) {
+                std::error_code ec;
+                (void)log->append(level, to_string(alert.kind),
+                                  std::string_view(fields, static_cast<std::size_t>(n)), ec);
+            }
+        }
     };
     auto alive_fn = [&](std::size_t worker_idx) {
         return worker_process_alive(pid_path_dir, worker_idx);
@@ -80,6 +108,39 @@ int run_monitor(const MonitorConfig& cfg, const char* region_name, const char* p
     std::fwrite(report.data(), 1, report.size(), stdout);
     std::fputc('\n', stdout);
     std::fflush(stdout);
+    if (log != nullptr && log->is_open()) {
+        // Final snapshot mirrored to the log with alerts flattened by kind
+        // (same names as the alert vocabulary, enum order).
+        char fields[256];
+        const int n = std::snprintf(fields, sizeof(fields),
+                                    "\"polls\":%llu,\"worker_crashed\":%llu,\"worker_stalled\":%llu,"
+                                    "\"worker_recovered\":%llu,\"worker_overrun\":%llu,"
+                                    "\"worker_idle\":%llu,\"worker_running\":%llu",
+                                    static_cast<unsigned long long>(stats.polls),
+                                    static_cast<unsigned long long>(
+                                        stats.alerts_by_kind[static_cast<std::size_t>(
+                                            AlertKind::kWorkerCrashed)]),
+                                    static_cast<unsigned long long>(
+                                        stats.alerts_by_kind[static_cast<std::size_t>(
+                                            AlertKind::kWorkerStalled)]),
+                                    static_cast<unsigned long long>(
+                                        stats.alerts_by_kind[static_cast<std::size_t>(
+                                            AlertKind::kWorkerRecovered)]),
+                                    static_cast<unsigned long long>(
+                                        stats.alerts_by_kind[static_cast<std::size_t>(
+                                            AlertKind::kWorkerOverrun)]),
+                                    static_cast<unsigned long long>(
+                                        stats.alerts_by_kind[static_cast<std::size_t>(
+                                            AlertKind::kWorkerIdle)]),
+                                    static_cast<unsigned long long>(
+                                        stats.alerts_by_kind[static_cast<std::size_t>(
+                                            AlertKind::kWorkerRunning)]));
+        if (n > 0) {
+            std::error_code ec;
+            (void)log->append(observability::LogLevel::kInfo, "monitor_report",
+                              std::string_view(fields, static_cast<std::size_t>(n)), ec);
+        }
+    }
 
     workers::signals::uninstall();
     handle.detach();

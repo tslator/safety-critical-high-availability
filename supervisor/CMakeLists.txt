@@ -1,5 +1,6 @@
 add_library(safety_crit_supervisor STATIC
     src/supervisor.cpp
+    src/witness_events.cpp
 )
 add_library(safety_crit::supervisor ALIAS safety_crit_supervisor)
 
@@ -12,6 +13,7 @@ target_link_libraries(safety_crit_supervisor
            safety_crit::runtime
            safety_crit::workers
            safety_crit::monitors
+           safety_crit::observability
 )
 safety_crit_apply_warnings(safety_crit_supervisor)
 safety_crit_apply_sanitizers(safety_crit_supervisor)

@@ -93,6 +93,41 @@ bool level_from_name(std::string_view name, LogLevel& level) {
     return false;
 }
 
+std::uint64_t now_unix_ns() {
+    return realtime_ns();
+}
+
+bool format_stdout_event(std::uint64_t ts_ns, LogLevel level, std::string_view component,
+                         std::string_view event, std::string_view extra_fields,
+                         std::string& out) {
+    const char* level_name = nullptr;
+    if (!level_to_name(level, level_name) || !is_valid_component(component) ||
+        !is_valid_component(event)) {
+        return false;
+    }
+    if (extra_fields.find('\n') != std::string_view::npos ||
+        extra_fields.find('}') != std::string_view::npos ||
+        (!extra_fields.empty() && extra_fields.front() != '"')) {
+        return false;
+    }
+    std::string extra_part;
+    if (!extra_fields.empty()) {
+        extra_part = "," + std::string(extra_fields);
+    }
+    char line[kMaxEventRecordBytes];
+    const int n = std::snprintf(line, sizeof(line),
+                                "{\"ts\":%llu,\"level\":\"%s\",\"component\":\"%s\","
+                                "\"event\":\"%s\"%s}",
+                                static_cast<unsigned long long>(ts_ns), level_name,
+                                std::string(component).c_str(), std::string(event).c_str(),
+                                extra_part.c_str());
+    if (n < 0 || static_cast<std::size_t>(n) >= sizeof(line)) {
+        return false;
+    }
+    out.assign(line, static_cast<std::size_t>(n));
+    return true;
+}
+
 bool parse_event_record(std::string_view line, EventRecord& record, std::string& error) {
     record = EventRecord{};
     if (line.empty() || line.front() != '{' || line.back() != '}') {

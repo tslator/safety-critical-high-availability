@@ -77,6 +77,20 @@ bool level_to_name(LogLevel level, const char*& name);
 // Parses a canonical level name; false if unknown.
 bool level_from_name(std::string_view name, LogLevel& level);
 
+// CLOCK_REALTIME nanoseconds (the default writer clock, exposed for
+// components that stamp their own stdout records).
+std::uint64_t now_unix_ns();
+
+// Formats the stdout witness form of an event (T-0034, DEC-0014 §4): the
+// log record content without the `schema`/`seq` bookkeeping fields, so a
+// component piping JSON to stdout emits
+//   {"ts":N,"level":"...","component":"...","event":"...",[,<extra>]}
+// `extra_fields` carries the same contract as EventLogWriter::append.
+// False (and `out` untouched) on invalid level/event/extra or overflow.
+bool format_stdout_event(std::uint64_t ts_ns, LogLevel level, std::string_view component,
+                         std::string_view event, std::string_view extra_fields,
+                         std::string& out);
+
 // One parsed record. `raw` holds the full original line (without the
 // trailing newline) for verbatim forwarding and diagnostics.
 struct EventRecord {

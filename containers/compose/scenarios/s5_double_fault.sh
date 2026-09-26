@@ -18,10 +18,10 @@ hot_b="$(worker_pid 1)"
 log "S5: double-faulting hot workers A (pid ${hot_a}) and B (pid ${hot_b})"
 perturb double-fault --target "${hot_a}" --target2 "${hot_b}" | tee -a "${REPLAY}" >/dev/null
 
-wait_log 'logical ring 1 degraded (reason=standby_exhausted)' 10
-degraded_events="$(supervisor_log | grep -c 'logical ring 1 degraded' || true)"
+wait_log '"event":"ring_degraded","ring":1,"reason":"standby_exhausted"' 10
+degraded_events="$(supervisor_log | grep -c '"event":"ring_degraded","ring":1' || true)"
 [ "${degraded_events}" = "1" ] || fail "expected exactly one DEGRADED event, got ${degraded_events}"
-supervisor_log | grep -q 'logical ring 0 degraded' && fail "ring 0 must not degrade (C promotes there)"
+supervisor_log | grep -q '"event":"ring_degraded","ring":0' && fail "ring 0 must not degrade (C promotes there)"
 
 # Both replacement physical processes restart as standby: new live pids.
 wait_new_live_pid 0 "${hot_a}" 10
