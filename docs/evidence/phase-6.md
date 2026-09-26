@@ -215,3 +215,40 @@ evidence here or in `NOTES.md`.
 - No shared-memory code touched: `git status` shows zero changes under
   `shared-memory/`; region layout untouched (v4).
 - Hosted CI: pending (recorded at phase integration if not per task).
+
+## T-0041 Result
+
+- Implementation: `observability/include/safety_crit/observability/region_metrics.hpp`
+  + `observability/src/region_metrics.cpp` (library
+  `safety_crit::observability`, now linking `safety_crit::shared_memory`).
+  `declare_region_metrics` registers the DEC-0014 §8 region families
+  (`worker_status{worker}` gauge, `ring_buffer_sequence{worker}` gauge,
+  `ring_corruptions_total{worker}` counter, `ownership_epoch{ring}` gauge;
+  labels = decimal logical indices). `collect_region_metrics` samples with
+  one atomic load per value via the sanctioned observer surface only
+  (`WorkerStatusCell.status` acquire load, `RingBuffer::pushed()` /
+  `corruption_count()`, `read_ownership()`); no CAS/store/pop anywhere
+  (DEC-0014 §11). `worker_status` mapping exposed as a standalone pure
+  function: IDLE/zero=0, RUNNING=1, CRASHED=2, RECOVERING=3, DEGRADED=4,
+  precedence DEGRADED > RECOVERING > CRASHED > RUNNING > IDLE, kOverrun not
+  a state. `read_ownership` failure (unassigned/mid-transfer ring) keeps the
+  last reported epoch instead of fabricating a value.
+- Tests: `observability/tests/region_metrics_test.cpp`, 7 cases in both
+  frameworks: mapping pinned (all flags, all precedence pairs, overrun,
+  zero); declaration (4 families, EEXIST on duplicate); initialized region
+  renders per-worker zeros + epoch 2 (region init hands ring i to physical
+  i); fixture state changes (status flip, push, bad-CRC push consumed via
+  the skip-and-count path, ownership transfer → epoch 4) visible on next
+  collect; DEGRADED-beats-RUNNING through the real status cell; read-only
+  proof (double collect → `verify_identity()` true, `integrity_word ==
+  compute_region_integrity()`, `verify_worker_ring()` true, byte-identical
+  renders); undeclared registry → ENOENT without partial mutation.
+- GoogleTest 185/185 (178 pre-existing + 7 new); Catch2 185/185.
+- ASan+UBSan (GoogleTest): 165/165, zero reports.
+- TSan (GoogleTest) under `setarch --addr-no-randomize`: 165/165, zero race
+  reports.
+- Clang verification (pinned clang-14 container, `clang-verify` preset):
+  185/185.
+- No shared-memory code touched: `git status` shows zero changes under
+  `shared-memory/`; region layout untouched (v4).
+- Hosted CI: pending (recorded at phase integration if not per task).

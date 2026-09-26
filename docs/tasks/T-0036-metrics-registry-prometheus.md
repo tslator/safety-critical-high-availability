@@ -16,7 +16,7 @@ in the full local test matrix before its commit:
 1. [T-0040](T-0040-metrics-registry-encoder.md) — metrics registry +
    Prometheus text encoder (pure in-memory layer). **Complete 2026-09-26.**
 2. [T-0041](T-0041-region-metrics-collector.md) — read-only region
-   collector.
+   collector. **Complete 2026-09-26.**
 3. [T-0042](T-0042-event-metrics-collector.md) — event-log-tail collector.
 
 ## Scope

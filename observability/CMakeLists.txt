@@ -2,8 +2,11 @@ add_library(safety_crit_observability STATIC
     src/event_log.cpp
     src/http_server.cpp
     src/metrics.cpp
+    src/region_metrics.cpp
 )
 add_library(safety_crit::observability ALIAS safety_crit_observability)
+
+target_link_libraries(safety_crit_observability PUBLIC safety_crit::shared_memory)
 
 target_include_directories(safety_crit_observability
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

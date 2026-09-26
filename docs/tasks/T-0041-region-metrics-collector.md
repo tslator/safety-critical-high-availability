@@ -1,6 +1,6 @@
 # T-0041: Region Metrics Collector
 
-- Status: Planned
+- Status: Complete (2026-09-26)
 - Owner: Unassigned
 - Priority: High
 - Depends on: T-0040 (subtask 2/3 of T-0036)
