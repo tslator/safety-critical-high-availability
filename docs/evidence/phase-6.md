@@ -178,3 +178,40 @@ evidence here or in `NOTES.md`.
   the phase integration task (T-0039); no smoke regression introduced in
   the native matrix.
 - Hosted CI: pending (recorded at phase integration if not per task).
+
+## T-0040 Result
+
+- Implementation: `observability/include/safety_crit/observability/metrics.hpp`
+  + `observability/src/metrics.cpp` (added to library
+  `safety_crit::observability`). Pure in-memory layer, no region/event-log/
+  socket dependencies. `MetricsRegistry`: `declare_family` (name validated
+  `[a-zA-Z_:][a-zA-Z0-9_:]*`, label key validated without colons, duplicate
+  → `EEXIST`); `value()` returns a stable `std::atomic<double>&` created at 0
+  on first touch (samples heap-allocated, never removed — scrape-path loads
+  are atomic, structure mutation is owner-thread only); `set`/`add` relaxed
+  atomic store/fetch_add; `render_prometheus` emits `# HELP`/`# TYPE` per
+  family with families sorted by name and samples sorted by label value
+  (byte-identical re-renders); label-value escaping (`\\`, `\"`, `\n`,
+  backslash first); values via `snprintf` (`%lld` for integral < 1e15,
+  `%.10g` otherwise, `NaN`/`+Inf`/`-Inf`). Error idiom:
+  `bool(..., std::error_code&)` with `EINVAL`/`EEXIST`/`ENOENT`.
+- Tests: `observability/tests/metrics_test.cpp`, 11 cases in both
+  frameworks: empty registry → empty string; type/help rendering; labeled
+  counter samples; label escaping (incl. explicit escape-helper case);
+  deterministic ordering (declared out of order, byte-stable across
+  renders, unlabeled-set-on-labeled rejected without creating a sample);
+  declared family without samples renders comment lines only; declaration
+  validation (invalid/duplicate names, colon label key); lookup/label
+  contract (ENOENT/EINVAL, stable reference identity); value formatting
+  (int/float/large/NaN/Inf); atomic update visible on next render;
+  concurrent scrape-vs-update (updater thread stores through the atomic
+  handle, main thread renders and asserts monotonic counter — TSan leg).
+- GoogleTest 178/178 (167 pre-existing + 11 new); Catch2 178/178.
+- ASan+UBSan (GoogleTest): 158/158, zero reports.
+- TSan (GoogleTest) under `setarch --addr-no-randomize`: 158/158, zero race
+  reports (concurrent scrape-vs-update case active under TSan).
+- Clang verification (pinned clang-14 container, `clang-verify` preset):
+  178/178.
+- No shared-memory code touched: `git status` shows zero changes under
+  `shared-memory/`; region layout untouched (v4).
+- Hosted CI: pending (recorded at phase integration if not per task).

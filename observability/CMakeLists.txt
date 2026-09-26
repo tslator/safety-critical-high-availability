@@ -1,6 +1,7 @@
 add_library(safety_crit_observability STATIC
     src/event_log.cpp
     src/http_server.cpp
+    src/metrics.cpp
 )
 add_library(safety_crit::observability ALIAS safety_crit_observability)
 

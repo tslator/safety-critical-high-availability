@@ -1,6 +1,6 @@
 # T-0040: Metrics Registry and Prometheus Text Encoder
 
-- Status: In Progress
+- Status: Complete (2026-09-26)
 - Owner: AI agent (opencode)
 - Priority: High
 - Depends on: None (subtask 1/3 of T-0036)
