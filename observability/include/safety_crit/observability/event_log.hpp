@@ -195,6 +195,10 @@ public:
     const SequenceState* state_for(std::string_view key) const;
     std::uint64_t gaps_total() const;
 
+    // Full continuity map (keyed as state_for). Exposed for gap enumeration
+    // by the event metrics collector (T-0042); read-only view.
+    const std::map<std::string, SequenceState>& states() const { return states_; }
+
     void close();
 
 private:

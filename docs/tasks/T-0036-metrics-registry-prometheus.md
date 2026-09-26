@@ -1,7 +1,7 @@
 # T-0036: Metrics Registry and Prometheus Encoder
 
-- Status: In Progress (decomposed 2026-09-26 into T-0040–T-0042; this card
-  is the phase-level roll-up and stays open until all subtasks are complete)
+- Status: Complete (2026-09-26; all three subtasks T-0040–T-0042 green in
+  the full local test matrix — see Phase 6 evidence)
 - Owner: AI agent (opencode)
 - Priority: High
 - Depends on: T-0033, T-0035
@@ -18,6 +18,7 @@ in the full local test matrix before its commit:
 2. [T-0041](T-0041-region-metrics-collector.md) — read-only region
    collector. **Complete 2026-09-26.**
 3. [T-0042](T-0042-event-metrics-collector.md) — event-log-tail collector.
+   **Complete 2026-09-26.**
 
 ## Scope
 

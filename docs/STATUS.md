@@ -1,6 +1,6 @@
 # Project Status
 
-- Current phase: Phase 6 (Observability and Certification-Grade Logging) in progress — T-0033 (event log library), T-0035 (HTTP server core), T-0034 (structured logging migration), T-0040 (metrics registry + Prometheus encoder), and T-0041 (region metrics collector) complete; T-0036 remaining as [T-0042](tasks/T-0042-event-metrics-collector.md); then [T-0037](tasks/T-0037-health-status-endpoints.md)–[T-0039](tasks/T-0039-phase6-integration-exit.md) (review [D-2026-09-24-001](reviews/2026-09-24-phase6-observability-architecture.md), decision [DEC-0014](decisions/0014-phase6-observability-logging.md))
+- Current phase: Phase 6 (Observability and Certification-Grade Logging) in progress — T-0033 (event log library), T-0035 (HTTP server core), T-0034 (structured logging migration), and T-0036 (metrics registry + Prometheus encoder, via subtasks T-0040–T-0042) complete; next [T-0037](tasks/T-0037-health-status-endpoints.md)–[T-0039](tasks/T-0039-phase6-integration-exit.md) (review [D-2026-09-24-001](reviews/2026-09-24-phase6-observability-architecture.md), decision [DEC-0014](decisions/0014-phase6-observability-logging.md))
 - Current gate: Phase 5 exit gate satisfied — GoogleTest/Catch2 134/134, ASan+UBSan + TSan 118/118, Clang, Docker, Compose, five scenarios green 5× each on the CI reference host, and S1 replay determinism observed (see [evidence](evidence/phase-5.md))
 - Last updated: 2026-09-26
 
@@ -38,19 +38,19 @@
 | T-0035: bounded HTTP/1.1 server core | Complete | Hand-rolled single-threaded `poll()` server in `safety_crit::observability` (GET/HEAD + routes, keep-alive, `std::stop_token` + `sig_atomic_t` shutdown; bounds: 512 B request line / 32 lines / 8 KiB headers → 431, 2 s request → 408, 5 s idle close, 16 connections, no request bodies); 15 loopback socket tests ×2 frameworks green (GoogleTest/Catch2 160/160), ASan+UBSan 143/143, TSan 143/143 under `setarch --addr-no-randomize`, socket tests active under sanitizers; zero changes under `shared-memory/`; [evidence](evidence/phase-6.md) |
 | T-0040: metrics registry and Prometheus text encoder | Complete | `MetricsRegistry` + hand-rolled `snprintf` text exposition v0.0.4 in `safety_crit::observability` (validated declarations, atomic samples, deterministic sorted output, label escaping); 11 tests ×2 frameworks green (GoogleTest/Catch2 178/178), ASan+UBSan 158/158, TSan 158/158 under `setarch --addr-no-randomize`, clang-verify 178/178; zero changes under `shared-memory/`; [evidence](evidence/phase-6.md) |
 | T-0041: region metrics collector | Complete | Read-only region→registry bridge (`region_metrics.hpp/cpp`) for the DEC-0014 §8 region families; sanctioned observer surface only, pinned `worker_status` precedence mapping; 7 tests ×2 frameworks green (GoogleTest/Catch2 185/185), ASan+UBSan 165/165, TSan 165/165, clang-verify 185/185; zero changes under `shared-memory/`; [evidence](evidence/phase-6.md) |
+| T-0042: event-log metrics collector | Complete | Event-log-tail collector (`event_metrics.hpp/cpp`): `perturbation_count_total{type}` from `component=perturb` records, `failover_duration_seconds` gauge (last `failover_recovered` `latency_ms`), `event_log_gaps_total{component}` `set` from reader continuity state, `observability_up`/`observability_uptime_seconds` (injectable clock); `data_loss_events_total` structurally decoupled (explicit `observe_data_loss(n)` hook, wired in T-0038); 7 tests ×2 frameworks green (GoogleTest/Catch2 192/192), ASan+UBSan 172/172, TSan 172/172, clang-verify 192/192; zero changes under `shared-memory/`; [evidence](evidence/phase-6.md) |
 | T-0034: structured logging migration | Complete | `--event-log` flag (off → Phase 5 byte-identical); supervisor witnesses migrated to JSON events (`failover_started`/`failover_recovered` w/ `latency_ms`/`ring_degraded`/`stall_recovered`/`stall_escalated`/`shutdown_summary`) via dual-write `WitnessSink`; worker lifecycle events (`worker_started`/`worker_stopped`/`worker_deadline_overrun`) log-only between ticks; monitor alerts/report mirrored to event log, stdout unchanged; all Compose scenario greps + replay parser migrated lockstep; 7 new tests ×2 frameworks green (GoogleTest/Catch2 167/167), ASan+UBSan 147/147, TSan 147/147 under `setarch --addr-no-randomize`; zero changes under `shared-memory/`; [evidence](evidence/phase-6.md) |
 
 ## Next Work
 
 1. Continue Phase 6 per the [Phase 6 plan](phases/PHASE_6_OBSERVABILITY.md):
-   [T-0036](tasks/T-0036-metrics-registry-prometheus.md) is decomposed into
-   [T-0040](tasks/T-0040-metrics-registry-encoder.md) (metrics registry +
-   Prometheus encoder), [T-0041](tasks/T-0041-region-metrics-collector.md)
-   (region collector), and [T-0042](tasks/T-0042-event-metrics-collector.md)
-   (event-log collector), then [T-0037](tasks/T-0037-health-status-endpoints.md)
-   and [T-0038](tasks/T-0038-observability-cli-compose.md). T-0038 must also
-   wire the two producer-side sources surfaced by T-0042: perturb harness
-   event-log append and supervisor drain-witness data-loss attribution.
+   T-0036 (metrics registry + Prometheus encoder, subtasks T-0040–T-0042) is
+   complete; next [T-0037](tasks/T-0037-health-status-endpoints.md) (health +
+   status endpoints) and [T-0038](tasks/T-0038-observability-cli-compose.md)
+   (daemon CLI + Compose wiring). T-0038 must also wire the two producer-side
+   sources surfaced by T-0042: perturb harness event-log append (feeds
+   `perturbation_count_total`) and supervisor drain-witness data-loss
+   attribution (`observe_data_loss`).
 2. Optional tooling follow-ups from DEC-0008: `clang-static-analysis`
    (advisory) and `clang-sanitizers` presets.
 3. Deferred residual risk from DEC-0013 (Phase 5 evidence): a

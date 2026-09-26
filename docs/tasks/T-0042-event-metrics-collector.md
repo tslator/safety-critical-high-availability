@@ -1,6 +1,6 @@
 # T-0042: Event-Log Metrics Collector
 
-- Status: Planned
+- Status: Complete (2026-09-26)
 - Owner: Unassigned
 - Priority: High
 - Depends on: T-0033, T-0040 (subtask 3/3 of T-0036)

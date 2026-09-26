@@ -252,3 +252,52 @@ evidence here or in `NOTES.md`.
 - No shared-memory code touched: `git status` shows zero changes under
   `shared-memory/`; region layout untouched (v4).
 - Hosted CI: pending (recorded at phase integration if not per task).
+
+## T-0042 Result — Event-Log Metrics Collector (2026-09-26)
+
+- Implemented `declare_event_metrics` and `EventMetricsCollector` in
+  `observability/include/safety_crit/observability/event_metrics.hpp` and
+  `observability/src/event_metrics.cpp`. Declares the six DEC-0014 §8
+  event-derived families: `perturbation_count_total{type}` (counter),
+  `failover_duration_seconds` (gauge), `data_loss_events_total` (counter),
+  `event_log_gaps_total{component}` (counter), `observability_up` (gauge),
+  `observability_uptime_seconds` (gauge).
+- `poll(reader, registry, ec)` drains records to `kEnd`/`kIncomplete`
+  (torn tail never advances counters past the watermark; the consumer
+  resumes via the documented `reader.seek(reader.watermark())` tail-follow
+  idiom). Perturbation records (`component=perturb`) are counted by their
+  `category` extra (crash/stall/corrupt/double-fault; unknown categories and
+  records without one are ignored, never an error). `failover_recovered`
+  records set the latency gauge from `latency_ms/1000` (last write wins).
+  Gap counts are `set` (not added) from the reader's cumulative continuity
+  state, so re-polls and watermark resumes never double count.
+  `observability_up` becomes 1 from the first poll; uptime derives from an
+  injectable nanosecond clock (default `now_unix_ns`).
+- `data_loss_events_total` is structurally decoupled: `poll` never touches
+  it; the embedding process reports it via `observe_data_loss(n)` (supervisor
+  drain-witness gap source, wired at daemon assembly in T-0038).
+- JSON extra extraction (`find_json_string_field` / `find_json_number_field`)
+  is hand-rolled to keep the DEC-0014 §6 dependency allowlist; matches the
+  schema v1 flat-field format only.
+- Added a read-only `states()` accessor on `EventLogReader` (continuity map)
+  for gap enumeration; no behavior change to the log layer.
+- Tests: `observability/tests/event_metrics_test.cpp`, 7 cases in both
+  frameworks: declaration (6 families, EEXIST on duplicate); replayed
+  synthetic fixtures yield exact counters (crash=2/stall=1/corrupt=1/
+  double-fault=1, bogus category ignored, failover gauge 1.234, up=1);
+  failover gauge last-write-wins (0.25); injected log gap (seq 1→3) yields
+  `event_log_gaps_total{component="supervisor"} 1` and leaves
+  `data_loss_events_total` sample-free until `observe_data_loss(3)` moves
+  only that counter; torn trailing line not counted until completed and
+  re-polled from the watermark (counted exactly once, no double count);
+  uptime from an injected clock (0 then 5); undeclared registry → ENOENT
+  with no family created.
+- GoogleTest 192/192 (185 pre-existing + 7 new); Catch2 192/192.
+- ASan+UBSan (GoogleTest): 172/172, zero reports.
+- TSan (GoogleTest) under `setarch --addr-no-randomize`: 172/172, zero race
+  reports.
+- Clang verification (pinned clang-14 container, `clang-verify` preset):
+  192/192.
+- No shared-memory code touched: `git status` shows zero changes under
+  `shared-memory/`; region layout untouched (v4).
+- Hosted CI: pending (recorded at phase integration if not per task).
