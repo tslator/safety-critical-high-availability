@@ -20,7 +20,7 @@ using namespace safety_crit::workers;
 
 constexpr std::uint64_t kTestSeed = 0x0123456789ABCDEFULL;
 
-constexpr WorkerConfig kValidConfig{};
+const WorkerConfig kValidConfig{};
 
 WorkerConfig make_valid() {
     WorkerConfig c{};
