@@ -1,6 +1,6 @@
 # Project Status
 
-- Current phase: Phase 6 (Observability and Certification-Grade Logging) in progress — T-0033 (event log library), T-0035 (HTTP server core), and T-0034 (structured logging migration) complete; remaining: [T-0036](tasks/T-0036-metrics-registry-prometheus.md)–[T-0039](tasks/T-0039-phase6-integration-exit.md) (review [D-2026-09-24-001](reviews/2026-09-24-phase6-observability-architecture.md), decision [DEC-0014](decisions/0014-phase6-observability-logging.md))
+- Current phase: Phase 6 (Observability and Certification-Grade Logging) in progress — T-0033 (event log library), T-0035 (HTTP server core), and T-0034 (structured logging migration) complete; T-0036 decomposed into subtasks [T-0040](tasks/T-0040-metrics-registry-encoder.md)–[T-0042](tasks/T-0042-event-metrics-collector.md); remaining: T-0036 (as T-0040–T-0042), [T-0037](tasks/T-0037-health-status-endpoints.md)–[T-0039](tasks/T-0039-phase6-integration-exit.md) (review [D-2026-09-24-001](reviews/2026-09-24-phase6-observability-architecture.md), decision [DEC-0014](decisions/0014-phase6-observability-logging.md))
 - Current gate: Phase 5 exit gate satisfied — GoogleTest/Catch2 134/134, ASan+UBSan + TSan 118/118, Clang, Docker, Compose, five scenarios green 5× each on the CI reference host, and S1 replay determinism observed (see [evidence](evidence/phase-5.md))
 - Last updated: 2026-09-25
 
@@ -41,11 +41,14 @@
 ## Next Work
 
 1. Continue Phase 6 per the [Phase 6 plan](phases/PHASE_6_OBSERVABILITY.md):
-   next up is [T-0036](tasks/T-0036-metrics-registry-prometheus.md) (metrics
-   registry + Prometheus exposition), building on the completed
-   [T-0035](tasks/T-0035-http-server-core.md) HTTP server core and the
-   [T-0034](tasks/T-0034-structured-logging-migration.md) structured logging
-   migration.
+   [T-0036](tasks/T-0036-metrics-registry-prometheus.md) is decomposed into
+   [T-0040](tasks/T-0040-metrics-registry-encoder.md) (metrics registry +
+   Prometheus encoder), [T-0041](tasks/T-0041-region-metrics-collector.md)
+   (region collector), and [T-0042](tasks/T-0042-event-metrics-collector.md)
+   (event-log collector), then [T-0037](tasks/T-0037-health-status-endpoints.md)
+   and [T-0038](tasks/T-0038-observability-cli-compose.md). T-0038 must also
+   wire the two producer-side sources surfaced by T-0042: perturb harness
+   event-log append and supervisor drain-witness data-loss attribution.
 2. Optional tooling follow-ups from DEC-0008: `clang-static-analysis`
    (advisory) and `clang-sanitizers` presets.
 3. Deferred residual risk from DEC-0013 (Phase 5 evidence): a
