@@ -1,7 +1,7 @@
 # T-0041: Region Metrics Collector
 
 - Status: Complete (2026-09-26)
-- Owner: Unassigned
+- Owner: AI agent (opencode)
 - Priority: High
 - Depends on: T-0040 (subtask 2/3 of T-0036)
 - Phase: Phase 6

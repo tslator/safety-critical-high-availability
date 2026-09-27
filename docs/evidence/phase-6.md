@@ -301,3 +301,57 @@ evidence here or in `NOTES.md`.
 - No shared-memory code touched: `git status` shows zero changes under
   `shared-memory/`; region layout untouched (v4).
 - Hosted CI: pending (recorded at phase integration if not per task).
+
+## T-0037 Result — Health Report and Status Endpoints (2026-09-26)
+
+- Implemented the daemon HTTP surface (DEC-0014 §7) in
+  `observability/include/safety_crit/observability/health_report.hpp` and
+  `observability/src/health_report.cpp` on the T-0035 server core:
+  `register_daemon_routes(server, ctx, ec)` installs `GET /health`,
+  `GET /metrics`, `GET /status`; response shapes documented in the header.
+- `EndpointContext` borrows `const SharedRegion*` (T-0041 sanctioned
+  observer surface only — `verify_identity`, `read_ownership`, atomics),
+  `MetricsRegistry*`, optional `const EventLogReader*`, `start_ns`, and an
+  injectable nanosecond clock (default `now_unix_ns`); per-route scratch
+  buffers keep body views alive until the send completes (single-threaded
+  server). Unknown paths 404 (T-0035 core behavior).
+- `/health`: always 200 while serving; `status` is `ok` iff region identity
+  verifies, every logical ring is owned (`read_ownership` succeeds, odd
+  epoch, valid owner), and `data_loss_events_total == 0`, else `degraded`.
+  Carries `ts`, `uptime_ms`, `data_loss_events_total`, per-worker
+  `state` (T-0041 `worker_status_metric_value` precedence mapping) +
+  `last_sequence`, and per-ring `physical_owner`/`epoch` (unreadable
+  ownership → owner 4294967295, epoch 0). Daemon contract:
+  `declare_event_metrics` (T-0042) first — a missing family renders 500;
+  a declared family without samples yet reads as 0. Region identity/
+  integrity transient skew is deliberately NOT folded into `degraded`
+  beyond ownership/loss (T1.3 live-traffic contract); `/status` reports
+  it fully.
+- `/metrics`: registry `render_prometheus` at text/plain; `/status`: JSON
+  snapshot of region version, `verify_identity`, integrity word valid,
+  `global_seq`, per-ring `pushed`/`corruption_count` + ownership, event-log
+  `available`/watermark/per-component `expected_seq`/`gaps`/`missed`,
+  daemon uptime. Booleans render as 0/1 integers (supervisor witness
+  idiom).
+- Added a read-only `MetricsRegistry::get(family, label, value, ec)`
+  accessor (`metrics.hpp/cpp`): ENOENT unknown family/sample, EINVAL label
+  mismatch; relaxed atomic load, no mutation.
+- Tests: `observability/tests/health_report_test.cpp`, 9 cases in both
+  frameworks: `/health` ok-shape (key set + values pinned, hand-rolled
+  bracket-balance/field checks, no JSON library); unowned ring → degraded
+  (epoch 0 renders unreadable); `data_loss_events_total` 3 and nonzero-
+  reset paths → degraded/ok; corrupted region identity → degraded;
+  missing data-loss family / null region / null registry → render false;
+  `/status` snapshot fields incl. event-log watermarks and gap counts;
+  `get()` accessor semantics; loopback end-to-end GETs (Content-Type,
+  200/404/405); mid-run region loss flips `/health` degraded while the
+  server keeps serving (never exits).
+- GoogleTest 201/201 (192 pre-existing + 9 new); Catch2 201/201.
+- ASan+UBSan (GoogleTest): 181/181, zero reports.
+- TSan (GoogleTest) under `setarch --addr-no-randomize`: 181/181, zero
+  race reports.
+- Clang verification (pinned clang-14 container, `clang-verify` preset):
+  201/201.
+- No shared-memory code touched: `git status` shows zero changes under
+  `shared-memory/`; region layout untouched (v4).
+- Hosted CI: pending (recorded at phase integration if not per task).

@@ -1,7 +1,7 @@
 # T-0037: Health Report and Status Endpoints
 
-- Status: Planned
-- Owner: Unassigned
+- Status: Complete
+- Owner: AI agent (opencode)
 - Priority: High
 - Depends on: T-0035, T-0036
 - Phase: Phase 6

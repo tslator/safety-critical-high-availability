@@ -1,7 +1,7 @@
 # T-0042: Event-Log Metrics Collector
 
 - Status: Complete (2026-09-26)
-- Owner: Unassigned
+- Owner: AI agent (opencode)
 - Priority: High
 - Depends on: T-0033, T-0040 (subtask 3/3 of T-0036)
 - Phase: Phase 6

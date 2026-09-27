@@ -91,6 +91,13 @@ public:
     bool set(std::string_view name, std::string_view label, double value, std::error_code& ec);
     bool add(std::string_view name, std::string_view label, double delta, std::error_code& ec);
 
+    // Reads the current value of an existing sample (relaxed atomic load).
+    // Never creates a family or sample: false with ENOENT for an unknown
+    // family or label, EINVAL on label mismatch (label present for an
+    // unlabeled family). Used by the health endpoints (T-0037) to fold
+    // counter state into JSON responses.
+    bool get(std::string_view name, std::string_view label, double& out, std::error_code& ec) const;
+
     bool has_family(std::string_view name) const;
     std::size_t family_count() const { return families_.size(); }
     std::size_t sample_count(std::string_view name) const;

@@ -160,6 +160,27 @@ bool MetricsRegistry::add(std::string_view name, std::string_view label, double 
     return true;
 }
 
+bool MetricsRegistry::get(std::string_view name, std::string_view label, double& out,
+                          std::error_code& ec) const {
+    ec.clear();
+    const Family* family = find_family(name);
+    if (family == nullptr) {
+        ec = err(std::errc::no_such_file_or_directory);
+        return false;
+    }
+    if (family->label_key.empty() && !label.empty()) {
+        ec = err(std::errc::invalid_argument);
+        return false;
+    }
+    const Sample* sample = find_sample(*family, label);
+    if (sample == nullptr) {
+        ec = err(std::errc::no_such_file_or_directory);
+        return false;
+    }
+    out = sample->value.load(std::memory_order_relaxed);
+    return true;
+}
+
 bool MetricsRegistry::has_family(std::string_view name) const {
     return find_family(name) != nullptr;
 }
