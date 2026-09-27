@@ -332,6 +332,8 @@ bool drain_output_witness(shared_memory::SharedRegion& region, std::size_t logic
         }
         const std::uint64_t sequence = ring.consumed() - 1u;
         if (witness.records != 0u && sequence != witness.next_sequence) {
+            witness.gap_lost =
+                (sequence > witness.next_sequence) ? (sequence - witness.next_sequence) : 1u;
             return false;
         }
         witness.next_sequence = sequence + 1u;
@@ -531,8 +533,22 @@ int run_supervisor(const SupervisorConfig& config) {
                 state = SupervisorState::kDegraded;
             }
         }
-        if (!drain_output_witness(*region.get(), 0u, output_witness_a) ||
-            !drain_output_witness(*region.get(), 1u, output_witness_b)) {
+        const bool drain_a_ok = drain_output_witness(*region.get(), 0u, output_witness_a);
+        const bool drain_b_ok = drain_output_witness(*region.get(), 1u, output_witness_b);
+        if (!drain_a_ok || !drain_b_ok) {
+            // T-0038 (DEC-0014 §8): publish the data-plane loss witness
+            // before entering failsafe; the daemon renders it as
+            // data_loss_events_total.
+            if (witness != nullptr) {
+                if (!drain_a_ok) {
+                    witness->emit(observability::LogLevel::kError, kEventDataLossObserved,
+                                  data_loss_observed_fields(0u, output_witness_a.gap_lost));
+                }
+                if (!drain_b_ok) {
+                    witness->emit(observability::LogLevel::kError, kEventDataLossObserved,
+                                  data_loss_observed_fields(1u, output_witness_b.gap_lost));
+                }
+            }
             state = SupervisorState::kFailsafe;
             recovery_failed = true;
             break;

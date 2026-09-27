@@ -15,3 +15,8 @@ services:
     # container's processes (signals land on the supervisor's worker
     # processes and PID 1).
     pid: "service:supervisor"
+    # T-0038: `perturb --event-log` appends perturbation_applied records to
+    # the supervisor's consolidated events.jsonl (same inode via the shared
+    # runtime volume; O_APPEND keeps the appends atomic).
+    volumes:
+      - ha-runtime:/run/safety-critical-ha

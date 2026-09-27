@@ -33,6 +33,10 @@ inline constexpr const char* kEventRingDegraded = "ring_degraded";
 inline constexpr const char* kEventStallRecovered = "stall_recovered";
 inline constexpr const char* kEventStallEscalated = "stall_escalated";
 inline constexpr const char* kEventShutdownSummary = "shutdown_summary";
+// T-0038 (DEC-0014 §8): drain-witness sequence gap (data-plane loss
+// witness). The daemon's data_loss_events_total counter advances from
+// these records' "lost" field via observe_data_loss() only.
+inline constexpr const char* kEventDataLossObserved = "data_loss_observed";
 
 // Extra-field builders (pinned field sets and orders).
 std::string failover_started_fields(std::uint32_t physical_worker);
@@ -40,6 +44,7 @@ std::string failover_recovered_fields(std::uint64_t latency_ms);
 std::string ring_degraded_fields(std::uint32_t ring);
 std::string stall_recovered_fields(std::uint32_t physical_worker, std::uint64_t epoch);
 std::string stall_escalated_fields(std::uint32_t physical_worker, std::uint64_t epoch);
+std::string data_loss_observed_fields(std::uint32_t ring, std::uint64_t lost);
 std::string shutdown_summary_fields(int state, std::uint64_t a_records,
                                     std::uint64_t a_corruptions, bool a_first_post_failover,
                                     std::uint64_t b_records, std::uint64_t b_corruptions,

@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <algorithm>
 #include <string>
 #include <system_error>
@@ -269,3 +270,70 @@ SAFETY_CRIT_TEST_CASE(Perturb, ParsesInvocationArguments) {
         SAFETY_CRIT_ASSERT(!parse_invocation(4, argv, invocation, error));
     }
 }
+
+SAFETY_CRIT_TEST_CASE(Perturb, ParseAcceptsEventLogFlag) {
+    Invocation invocation;
+    std::string error;
+    const char* argv[] = {"crash", "--target", "7", "--event-log", "/tmp/p_ev.jsonl"};
+    SAFETY_CRIT_ASSERT(parse_invocation(5, argv, invocation, error));
+    SAFETY_CRIT_ASSERT(invocation.event_log_path == "/tmp/p_ev.jsonl");
+
+    const char* no_path[] = {"crash", "--target", "7", "--event-log"};
+    SAFETY_CRIT_ASSERT(!parse_invocation(4, no_path, invocation, error));
+
+    Invocation plain;
+    const char* without[] = {"crash", "--target", "7"};
+    SAFETY_CRIT_ASSERT(parse_invocation(3, without, plain, error));
+    SAFETY_CRIT_ASSERT(plain.event_log_path.empty());
+}
+
+#if !SAFETY_CRIT_PERT_SANITIZED
+SAFETY_CRIT_TEST_CASE(Perturb, EventLogRecordAppendedOnCrashAction) {
+    const std::string log = "/tmp/perturb_ev_crash_" + std::to_string(::getpid()) + ".jsonl";
+    const std::string out = "/tmp/perturb_ev_crash_out_" + std::to_string(::getpid()) + ".log";
+    std::remove(log.c_str());
+    const pid_t target = spawn_sleeper();
+    Invocation invocation;
+    invocation.category = Category::kCrash;
+    invocation.target = target;
+    invocation.out_path = out;
+    invocation.event_log_path = log;
+    SAFETY_CRIT_ASSERT(run_invocation(invocation) == 0);
+    int status = 0;
+    SAFETY_CRIT_ASSERT(::waitpid(target, &status, 0) == target);
+    SAFETY_CRIT_ASSERT(WTERMSIG(status) == SIGSEGV);
+
+    std::FILE* f = std::fopen(log.c_str(), "rb");
+    SAFETY_CRIT_ASSERT(f != nullptr);
+    std::string text;
+    char buf[256];
+    std::size_t n = 0;
+    while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0) {
+        text.append(buf, n);
+    }
+    std::fclose(f);
+    SAFETY_CRIT_ASSERT(text.find("\"component\":\"perturb\"") != std::string::npos);
+    SAFETY_CRIT_ASSERT(text.find("\"event\":\"perturbation_applied\"") != std::string::npos);
+    SAFETY_CRIT_ASSERT(text.find("\"category\":\"crash\"") != std::string::npos);
+    SAFETY_CRIT_ASSERT(text.find("\"target\":" + std::to_string(target)) != std::string::npos);
+    std::remove(log.c_str());
+    std::remove(out.c_str());
+}
+
+SAFETY_CRIT_TEST_CASE(Perturb, EventLogSkippedForSupervisorCategories) {
+    const std::string log = "/tmp/perturb_ev_sup_" + std::to_string(::getpid()) + ".jsonl";
+    const std::string out = "/tmp/perturb_ev_sup_out_" + std::to_string(::getpid()) + ".log";
+    std::remove(log.c_str());
+    const pid_t target = spawn_sleeper();
+    Invocation invocation;
+    invocation.category = Category::kSupervisorExit;
+    invocation.target = target;
+    invocation.out_path = out;
+    invocation.event_log_path = log;
+    SAFETY_CRIT_ASSERT(run_invocation(invocation) == 0);
+    int status = 0;
+    SAFETY_CRIT_ASSERT(::waitpid(target, &status, 0) == target);
+    SAFETY_CRIT_ASSERT(::access(log.c_str(), F_OK) != 0);  // never created
+    std::remove(out.c_str());
+}
+#endif  // !SAFETY_CRIT_PERT_SANITIZED

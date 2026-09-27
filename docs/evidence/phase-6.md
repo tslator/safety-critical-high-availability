@@ -355,3 +355,84 @@ evidence here or in `NOTES.md`.
 - No shared-memory code touched: `git status` shows zero changes under
   `shared-memory/`; region layout untouched (v4).
 - Hosted CI: pending (recorded at phase integration if not per task).
+
+## T-0038 Result — Daemon CLI, Producer Wiring, and Observability Compose Topology (2026-09-27)
+
+- Implemented the daemon entry path: `observability/include/safety_crit/
+  observability/daemon.hpp` + `observability/src/daemon.cpp` and the
+  `observability` subcommand in `app/src/main.cpp` (DEC-0014 §9).
+  `parse_daemon_args` accepts `--listen HOST:PORT`, `--region NAME`,
+  `--event-log PATH`, `--ticks N` (defaults `127.0.0.1:8080`,
+  `/safety_crit_region`, poll 250 ms). `--once` prints one status JSON
+  snapshot and exits; the server path attaches with a bounded retry loop
+  (daemon may start before the supervisor), registers `/health` `/metrics`
+  `/status` (T-0037), samples region + event-log every poll tick via the
+  T-0035 tick hook, and exits 0 on SIGTERM/SIGINT via the server stop flag.
+- Producer wiring for the two T-0042 sources:
+  - Supervisor drain-witness gaps (`supervisor/src/supervisor.cpp`,
+    `witness_events.*`): `OutputWitness.gap_lost = sequence - next_sequence`
+    and a `data_loss_observed` witness event (`"ring":N,"lost":M`); the
+    daemon scans its own supervisor event-log records for that event and
+    calls `EventMetricsCollector::observe_data_loss(lost)`, which moves
+    `data_loss_events_total` and flips `/health` to `degraded` (CORE
+    property #1 exposure end-to-end).
+  - Perturb harness `--event-log PATH` (`perturb/src/harness.cpp`):
+    appends `component="perturb"` `perturbation_applied` records with
+    `"category"`/`"target"` extras for the four pinned categories
+    (crash/stall/corrupt/double-fault); supervisor-targeted categories are
+    skipped (the supervisor already witnesses those).
+  - Daemon start baselines `data_loss_events_total` to 0 so the Prometheus
+    exposition always carries the sample line (a declared-but-unset family
+    renders only HELP/TYPE and breaks naive `^data_loss_events_total`
+    scrapes).
+- Defects found by live/integration testing and fixed:
+  - `HttpServer` stop flag was `std::sig_atomic_t`, raced between
+    `request_stop()`/signal handler and `run()` across threads (TSan
+    report). Now `std::atomic<bool>` (relaxed) everywhere
+    (`observability/src/http_server.cpp`).
+  - `EventLogReader::read_next` latched EOF: after the first end-of-file
+    it never re-read, so the Compose daemon never saw records appended
+    after startup (perturb counts, data-loss events). EOF is now
+    per-call, never latched (tail-follow contract); regression test
+    `EventLog.ReaderTailsRecordsAppendedAfterEof`.
+  - `HttpServer.TickHookFiresWhileServing` installed the tick hook while
+    the server thread was running, violating the class's single-threaded
+    configuration contract (TSan report); hook now installed before
+    `start()`.
+- Compose (T-0021 extension): `docker-compose.yml` gains an `observability`
+  service running `observability --listen 0.0.0.0:8080 --region
+  /safety_crit_region --event-log /run/safety-critical-ha/events.jsonl`,
+  joining the supervisor IPC namespace via `ipc: service:supervisor`
+  (supervisor declares `ipc: shareable`, required for the donor),
+  `depends_on` supervisor `service_healthy`, healthcheck
+  `curl -fsS http://127.0.0.1:8080/health`, port published as
+  `${OBSERVABILITY_PORT:-8080}:8080`. A shared named volume
+  `ha-runtime:/run/safety-critical-ha` (supervisor + observability +
+  perturb) lets the daemon tail the supervisor event log; pidfile writes
+  are atomic (`O_TRUNC` + rename) so co-location is safe. Scenario overlay
+  and `common.sh` pass `--event-log` to every `perturb` invocation.
+- `containers/compose/failover-smoke.sh` extended: waits for daemon
+  `/health` ok, asserts `data_loss_events_total` present in the health
+  JSON and `worker_status` + `data_loss_events_total` samples in
+  `/metrics`.
+- Tests: 16 new cases in both frameworks — `daemon_test.cpp` (10: arg
+  parsing, `--once` snapshot shape, region-loss tracking, server serve +
+  degrade flip, data-loss witness counting, event-log tail counting, stop
+  semantics), `HttpServer.TickHookFiresWhileServing`,
+  `EventLog.ReaderTailsRecordsAppendedAfterEof`, 3 `Perturb` event-log
+  cases, `Supervisor.DrainGapSetsGapLostForDataLossEvent`.
+- GoogleTest 217/217 (201 pre-existing + 16 new); Catch2 217/217.
+- ASan+UBSan (GoogleTest): 195/195, zero reports.
+- TSan (GoogleTest) under `setarch --addr-no-randomize`: 195/195, zero
+  race reports (after the two fixes above).
+- Clang verification (pinned clang-14 container, `clang-verify` preset):
+  217/217.
+- Docker/Compose: `docker compose config --quiet` clean (base + perturb
+  overlay); live stack `up --wait` green with supervisor and observability
+  both healthy; S1 crash scenario PASS (81 ms recovery) with the daemon
+  live-counting `perturbation_count_total{type="crash"} 1` from the shared
+  event log; `failover-smoke.sh` PASS end-to-end including the new daemon
+  assertions.
+- No shared-memory code touched: `git status` shows zero changes under
+  `shared-memory/`; region layout untouched (v4).
+- Hosted CI: pending (recorded at phase integration if not per task).

@@ -35,6 +35,14 @@ std::string stall_escalated_fields(std::uint32_t physical_worker, std::uint64_t 
     return stall_recovered_fields(physical_worker, epoch);
 }
 
+std::string data_loss_observed_fields(std::uint32_t ring, std::uint64_t lost) {
+    char buf[96];
+    const int n =
+        snprintf(buf, sizeof(buf), "\"ring\":%u,\"lost\":%llu", ring,
+                 static_cast<unsigned long long>(lost));
+    return n > 0 ? std::string(buf, static_cast<std::size_t>(n)) : std::string{};
+}
+
 std::string shutdown_summary_fields(int state, std::uint64_t a_records,
                                     std::uint64_t a_corruptions, bool a_first_post_failover,
                                     std::uint64_t b_records, std::uint64_t b_corruptions,

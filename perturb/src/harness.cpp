@@ -3,8 +3,11 @@
 #include <cerrno>
 #include <charconv>
 #include <csignal>
+#include <cstdio>
 #include <ctime>
 #include <string_view>
+
+#include "safety_crit/observability/event_log.hpp"
 
 namespace safety_crit::perturb {
 namespace {
@@ -269,6 +272,12 @@ bool parse_invocation(int argc, const char* const* argv, Invocation& out, std::s
                 return false;
             }
             out.out_path = argv[i];
+        } else if (arg == "--event-log") {
+            if (++i >= argc || argv[i][0] == '\0') {
+                error = "perturb: --event-log requires a file path";
+                return false;
+            }
+            out.event_log_path = argv[i];
         } else {
             error = "perturb: unknown argument: " + std::string(arg);
             return false;
@@ -338,6 +347,34 @@ int run_invocation(const Invocation& invocation) {
     if (!ok) {
         std::fprintf(stderr, "perturb: action failed (errno %d)\n", ec.value());
         return 1;
+    }
+    // T-0038 (DEC-0014 §3): append the consolidated event-log record for
+    // the four categories that feed perturbation_count_total{type}
+    // (supervisor-directed categories excluded per DEC-0014 §8). A failed
+    // append is reported but not fatal: the replay log (--out) stays the
+    // authoritative action witness.
+    if (!invocation.event_log_path.empty()) {
+        const bool counted = invocation.category == Category::kCrash ||
+                             invocation.category == Category::kStall ||
+                             invocation.category == Category::kCorrupt ||
+                             invocation.category == Category::kDoubleFault;
+        if (counted) {
+            observability::EventLogWriter writer;
+            std::error_code wec;
+            if (writer.open(invocation.event_log_path, "perturb", {}, wec)) {
+                const std::string fields =
+                    std::string("\"category\":\"") + to_string(invocation.category) +
+                    "\",\"target\":" + std::to_string(invocation.target);
+                if (!writer.append(observability::LogLevel::kInfo, kEventPerturbationApplied,
+                                   fields, wec)) {
+                    std::fprintf(stderr, "perturb: event-log append failed (errno %d)\n",
+                                 wec.value());
+                }
+            } else {
+                std::fprintf(stderr, "perturb: event-log open failed (errno %d)\n",
+                             wec.value());
+            }
+        }
     }
     return 0;
 }

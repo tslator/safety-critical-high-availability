@@ -41,17 +41,14 @@
 | T-0042: event-log metrics collector | Complete | Event-log-tail collector (`event_metrics.hpp/cpp`): `perturbation_count_total{type}` from `component=perturb` records, `failover_duration_seconds` gauge (last `failover_recovered` `latency_ms`), `event_log_gaps_total{component}` `set` from reader continuity state, `observability_up`/`observability_uptime_seconds` (injectable clock); `data_loss_events_total` structurally decoupled (explicit `observe_data_loss(n)` hook, wired in T-0038); 7 tests ×2 frameworks green (GoogleTest/Catch2 192/192), ASan+UBSan 172/172, TSan 172/172, clang-verify 192/192; zero changes under `shared-memory/`; [evidence](evidence/phase-6.md) |
 | T-0034: structured logging migration | Complete | `--event-log` flag (off → Phase 5 byte-identical); supervisor witnesses migrated to JSON events (`failover_started`/`failover_recovered` w/ `latency_ms`/`ring_degraded`/`stall_recovered`/`stall_escalated`/`shutdown_summary`) via dual-write `WitnessSink`; worker lifecycle events (`worker_started`/`worker_stopped`/`worker_deadline_overrun`) log-only between ticks; monitor alerts/report mirrored to event log, stdout unchanged; all Compose scenario greps + replay parser migrated lockstep; 7 new tests ×2 frameworks green (GoogleTest/Catch2 167/167), ASan+UBSan 147/147, TSan 147/147 under `setarch --addr-no-randomize`; zero changes under `shared-memory/`; [evidence](evidence/phase-6.md) |
 | T-0037: health report and status endpoints | Complete | `health_report.hpp/cpp`: `register_daemon_routes` on the T-0035 core — `GET /health` (always 200; `ok` iff identity verifies + all rings owned + `data_loss_events_total == 0`, else `degraded`; per-worker state/last_sequence, per-ring owner/epoch), `GET /metrics` (registry exposition), `GET /status` (region/integrity/counters/event-log watermarks/uptime); read-only `MetricsRegistry::get` accessor; mid-run region loss flips `degraded` without exiting; 9 tests ×2 frameworks green (GoogleTest/Catch2 201/201), ASan+UBSan 181/181, TSan 181/181, clang-verify 201/201; zero changes under `shared-memory/`; [evidence](evidence/phase-6.md) |
+| T-0038: observability daemon CLI, producer wiring, Compose integration | Complete | `observability` subcommand (`--listen/--region/--event-log/--ticks`; `--once` status snapshot; server serves `/health` `/metrics` `/status` with bounded attach wait, 250 ms tick sampling, SIGTERM/SIGINT clean exit); supervisor drain-witness `gap_lost` -> `data_loss_observed` witness -> daemon `observe_data_loss` moves `data_loss_events_total` and flips `/health` degraded; perturb `--event-log` appends `perturbation_applied` records; baseline-zero `data_loss_events_total` sample; live-found fixes: `EventLogReader` EOF no longer latches (tail-follow regression test), `HttpServer` stop flag `sig_atomic_t` -> `std::atomic<bool>` (TSan); Compose `observability` service joins supervisor IPC namespace (`ipc: service:supervisor`, donor `ipc: shareable`) + shared `ha-runtime` runtime volume, healthcheck on `/health`, scenario helpers pass `--event-log`, failover smoke asserts daemon endpoints; 16 new tests x2 frameworks green (GoogleTest/Catch2 217/217), ASan+UBSan 195/195, TSan 195/195, clang-verify 217/217, live S1 + failover smoke PASS; zero changes under `shared-memory/`; [evidence](evidence/phase-6.md) |
 
 ## Next Work
 
 1. Continue Phase 6 per the [Phase 6 plan](phases/PHASE_6_OBSERVABILITY.md):
-   T-0036 (metrics registry + Prometheus encoder, subtasks T-0040–T-0042) is
-   complete; next [T-0037](tasks/T-0037-health-status-endpoints.md) (health +
-   status endpoints) and [T-0038](tasks/T-0038-observability-cli-compose.md)
-   (daemon CLI + Compose wiring). T-0038 must also wire the two producer-side
-   sources surfaced by T-0042: perturb harness event-log append (feeds
-   `perturbation_count_total`) and supervisor drain-witness data-loss
-   attribution (`observe_data_loss`).
+   T-0033–T-0038 (including subtasks T-0040–T-0042) are complete; next
+   [T-0039](tasks/T-0039-phase6-integration-exit.md) (Phase 6 integration,
+   evidence, and exit gate).
 2. Optional tooling follow-ups from DEC-0008: `clang-static-analysis`
    (advisory) and `clang-sanitizers` presets.
 3. Deferred residual risk from DEC-0013 (Phase 5 evidence): a

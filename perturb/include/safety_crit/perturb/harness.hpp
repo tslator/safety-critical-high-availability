@@ -91,11 +91,19 @@ bool exit_supervisor(pid_t target, std::error_code& ec);
 
 // Parsed CLI invocation: `perturb <category> --target <pid>
 // [--target2 <pid>] [--out <path>]`.
+// T-0038 (DEC-0014 §3): event name for the consolidated event-log record
+// emitted on successful comparison-category actions.
+inline constexpr const char* kEventPerturbationApplied = "perturbation_applied";
+
 struct Invocation {
     Category category{Category::kCrash};
     pid_t target{-1};
     pid_t target2{-1};
     std::string out_path{};  // empty means stdout
+    // T-0038 (DEC-0014 §3): append a component "perturb" record to the
+    // consolidated event log after a successful action (comparison
+    // categories only: crash, stall, corrupt, double-fault).
+    std::string event_log_path{};
 };
 bool parse_invocation(int argc, const char* const* argv, Invocation& out, std::string& error);
 

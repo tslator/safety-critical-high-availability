@@ -130,6 +130,38 @@ SAFETY_CRIT_TEST_CASE(EventLog, HappyPathWriteRead) {
     SAFETY_CRIT_ASSERT(reader.gaps_total() == 0);
 }
 
+SAFETY_CRIT_TEST_CASE(EventLog, ReaderTailsRecordsAppendedAfterEof) {
+    // Regression (T-0021): EOF must not latch — a tail-following consumer
+    // (daemon poll loop) must observe records appended after the first
+    // end-of-file without reopen or seek.
+    TempLog log("tail-after-eof");
+    std::error_code ec;
+    append_raw(log.path(), "");  // create the file, like the supervisor does at startup
+    EventLogReader reader{};
+    SAFETY_CRIT_ASSERT(reader.open(log.path(), ec));
+
+    std::size_t incomplete = 0;
+    SAFETY_CRIT_ASSERT(drain(reader, incomplete) == 0);  // empty file: kEnd
+
+    append_raw(log.path(),
+               "{\"schema\":1,\"ts\":1,\"level\":\"info\",\"component\":\"perturb\",\"seq\":1,"
+               "\"event\":\"perturbation_applied\",\"category\":\"crash\",\"target\":8}\n");
+    EventRecord record{};
+    std::string error;
+    SAFETY_CRIT_ASSERT(reader.read_next(record, error) == ReadStatus::kOk);
+    SAFETY_CRIT_ASSERT(record.component == "perturb");
+    SAFETY_CRIT_ASSERT(record.event == "perturbation_applied");
+    SAFETY_CRIT_ASSERT(drain(reader, incomplete) == 0);
+
+    append_raw(log.path(),
+               "{\"schema\":1,\"ts\":2,\"level\":\"info\",\"component\":\"perturb\",\"seq\":2,"
+               "\"event\":\"perturbation_applied\",\"category\":\"stall\",\"target\":9}\n");
+    SAFETY_CRIT_ASSERT(reader.read_next(record, error) == ReadStatus::kOk);
+    SAFETY_CRIT_ASSERT(record.event == "perturbation_applied");
+    SAFETY_CRIT_ASSERT(drain(reader, incomplete) == 0);
+    SAFETY_CRIT_ASSERT(reader.gaps_total() == 0);
+}
+
 SAFETY_CRIT_TEST_CASE(EventLog, RecordFieldsRoundTrip) {
     TempLog log("fields");
     TestPolicy policy{};

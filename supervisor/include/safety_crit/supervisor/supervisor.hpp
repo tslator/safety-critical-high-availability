@@ -30,6 +30,10 @@ struct OutputWitness {
     std::uint64_t records{0};
     std::uint64_t corruptions{0};
     bool first_post_failover{false};
+    // T-0038: set on a rejected drain (return false) to the number of
+    // committed records skipped by the gap (>= 1); zero otherwise. Feeds
+    // the data_loss_observed witness event.
+    std::uint64_t gap_lost{0};
 };
 
 // Validates one complete newline-delimited monitor record. Unknown fields,

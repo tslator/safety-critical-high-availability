@@ -5,6 +5,7 @@ add_library(safety_crit_observability STATIC
     src/region_metrics.cpp
     src/event_metrics.cpp
     src/health_report.cpp
+    src/daemon.cpp
 )
 add_library(safety_crit::observability ALIAS safety_crit_observability)
 

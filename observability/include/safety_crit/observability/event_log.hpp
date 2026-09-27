@@ -207,7 +207,6 @@ private:
     int fd_{-1};
     std::string line_{};      // bytes after the watermark not yet line-delimited
     std::uint64_t watermark_{0};
-    bool eof_reached_{false};
     std::map<std::string, SequenceState> states_{};
 };
 

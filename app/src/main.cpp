@@ -16,6 +16,7 @@
 #include "safety_crit/monitors/monitor_config.hpp"
 #include "safety_crit/monitors/monitor_entry.hpp"
 #include "safety_crit/monitors/pidfile_liveness.hpp"
+#include "safety_crit/observability/daemon.hpp"
 #include "safety_crit/perturb/harness.hpp"
 #include "safety_crit/shared_memory/shared_region.hpp"
 #include "safety_crit/shared_memory/shm_attach.hpp"
@@ -46,7 +47,10 @@ void print_usage(std::ostream& out) {
         << "           double-fault|supervisor-kill|supervisor-exit> --target <pid>\n"
         << "           [--target2 <pid>] [--out <path>]\n"
         << "       safety-critical-ha replay <logfile> [--target-remap <from>=<pid>]\n"
-        << "       safety-critical-ha ownership [--region NAME]\n";
+        << "       safety-critical-ha ownership [--region NAME]\n"
+        << "       safety-critical-ha observability [--listen HOST:PORT]\n"
+        << "           [--region NAME] [--event-log PATH]\n"
+        << "           [--poll-interval-ms MS] [--ticks N] [--once]\n";
 }
 
 bool parse_u64(std::string_view text, std::uint64_t& out) {
@@ -350,6 +354,19 @@ int run_replay_command(int argc, char* argv[]) {
     return 0;
 }
 
+// T-0038 (DEC-0014 §9): observability daemon subcommand. Strict parsing
+// lives in the observability library (daemon.hpp); this is the thin CLI
+// adapter following the standing hand-rolled pattern.
+int run_observability_command(int argc, char* argv[]) {
+    safety_crit::observability::DaemonConfig cfg{};
+    std::string error;
+    if (!safety_crit::observability::parse_daemon_args(argc - 2, argv + 2, cfg, error)) {
+        std::cerr << error << "\n";
+        return 2;
+    }
+    return safety_crit::observability::run_daemon(cfg, std::cout, std::cerr);
+}
+
 // Read-only ownership probe for scenario witnesses (T-0030): prints
 // `ownership <ring> physical=<n> epoch=<n>` per logical ring.
 int run_ownership_command(int argc, char* argv[]) {
@@ -415,6 +432,10 @@ int main(int argc, char* argv[]) {
     if (argc >= 2 && std::string_view(argv[1]) == "ownership") {
         // T-0030: read-only ownership snapshot for scenario witnesses.
         return run_ownership_command(argc, argv);
+    }
+    if (argc >= 2 && std::string_view(argv[1]) == "observability") {
+        // T-0038 (DEC-0014 §9): observability daemon.
+        return run_observability_command(argc, argv);
     }
     print_usage(std::cerr);
     return 1;

@@ -10,6 +10,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -471,6 +472,35 @@ SAFETY_CRIT_TEST_CASE(HttpServer, NoFdLeakAcrossCyclesAndCleanShutdown) {
     server->shutdown();
     SAFETY_CRIT_ASSERT(open_fd_count() <= before - 1);
     server.reset();
+}
+
+std::atomic<int> g_tick_count{0};
+
+void count_ticks(void*) {
+    g_tick_count.fetch_add(1, std::memory_order_relaxed);
+}
+
+SAFETY_CRIT_TEST_CASE(HttpServer, TickHookFiresWhileServing) {
+    auto server = std::make_unique<TestServer>(test_config(), &register_hello);
+    // Installed before start(): hook mutation is single-threaded like the
+    // rest of HttpServer's configuration (see header contract); once the
+    // hook is installed it must fire on every poll iteration regardless of
+    // client activity (T-0038 daemon sampling).
+    server->server().set_tick_hook(&count_ticks, nullptr);
+    g_tick_count.store(0);
+    SAFETY_CRIT_ASSERT(server->start());
+    for (int i = 0; i < 200 && g_tick_count.load() == 0; ++i) {
+        std::this_thread::sleep_for(10ms);
+    }
+    SAFETY_CRIT_ASSERT(g_tick_count.load() > 0);
+    // Requests still serve correctly with a hook installed.
+    const int fd = open_loopback(server->port());
+    SAFETY_CRIT_ASSERT(fd >= 0);
+    SAFETY_CRIT_ASSERT(send_request(fd, "GET /hello HTTP/1.1\r\nHost: x\r\n\r\n"));
+    const ReadResult result = read_until_close(fd, 250ms);
+    ::close(fd);
+    SAFETY_CRIT_ASSERT(result.data.find("200 OK") != std::string::npos);
+    server->shutdown();
 }
 
 }  // namespace

@@ -374,17 +374,16 @@ ReadStatus EventLogReader::read_next(EventRecord& record, std::string& error) {
             record = std::move(parsed);
             return ReadStatus::kOk;
         }
-        if (eof_reached_) {
+        // NOTE: EOF must never latch. A tail-following consumer calls
+        // read_next again on every poll cycle and must observe records
+        // appended after a previous end-of-file (T-0021 compose stack).
+        char chunk[4096];
+        const ssize_t n = ::read(fd_, chunk, sizeof(chunk));
+        if (n == 0) {
             if (!line_.empty()) {
                 return ReadStatus::kIncomplete;  // torn trailing line, retryable
             }
             return ReadStatus::kEnd;
-        }
-        char chunk[4096];
-        const ssize_t n = ::read(fd_, chunk, sizeof(chunk));
-        if (n == 0) {
-            eof_reached_ = true;
-            continue;
         }
         if (n < 0) {
             if (errno == EINTR) {
@@ -408,7 +407,6 @@ bool EventLogReader::seek(std::uint64_t offset, std::error_code& ec) {
     }
     line_.clear();
     watermark_ = offset;
-    eof_reached_ = false;
     return true;
 }
 
@@ -432,7 +430,6 @@ void EventLogReader::close() {
     }
     line_.clear();
     watermark_ = 0;
-    eof_reached_ = false;
 }
 
 std::string EventLogReader::state_key(const EventRecord& record) {

@@ -24,8 +24,12 @@ worker_pid() {
 }
 
 # Runs a perturb action from the harness container; the JSON-lines record
-# goes to stdout (callers tee it into the replay file).
-perturb() { compose exec -T perturb safety-critical-ha perturb "$@"; }
+# goes to stdout (callers tee it into the replay file) and is additionally
+# appended to the supervisor's consolidated event log (T-0038).
+perturb() {
+  compose exec -T perturb safety-critical-ha perturb \
+    "$@" --event-log /run/safety-critical-ha/events.jsonl
+}
 
 supervisor_log() { compose logs supervisor 2>/dev/null; }
 

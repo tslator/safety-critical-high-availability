@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include <array>
+#include <atomic>
 #include <cerrno>
 #include <cctype>
 #include <chrono>
@@ -20,10 +21,14 @@
 namespace safety_crit::observability {
 namespace {
 
-std::sig_atomic_t g_stop = 0;
+// Inter-thread stop flag: written by the signal handler, request_stop(),
+// and reset_stop(); read by run() possibly on another thread. Must be a
+// real atomic (sig_atomic_t only covers signal delivery, not cross-thread
+// sharing) for TSan cleanliness (CORE property #3).
+std::atomic<bool> g_stop{false};
 
 void handle_signal(int) {
-    g_stop = 1;
+    g_stop.store(true, std::memory_order_relaxed);
 }
 
 constexpr int kPollTickMs = 100;
@@ -251,6 +256,11 @@ bool HttpServer::open_listener(std::error_code& ec) {
     return true;
 }
 
+void HttpServer::set_tick_hook(TickHook hook, void* context) {
+    tick_hook_ = hook;
+    tick_hook_context_ = context;
+}
+
 void HttpServer::close() {
     if (connections_) {
         for (std::size_t i = 0; i < kMaxConnections; ++i) {
@@ -274,11 +284,15 @@ void HttpServer::install_signal_handlers() {
 }
 
 void HttpServer::request_stop() {
-    g_stop = 1;
+    g_stop.store(true, std::memory_order_relaxed);
 }
 
 void HttpServer::reset_stop() {
-    g_stop = 0;
+    g_stop.store(false, std::memory_order_relaxed);
+}
+
+bool HttpServer::stop_requested() {
+    return g_stop.load(std::memory_order_relaxed);
 }
 
 void HttpServer::close_connection(std::size_t index) {
@@ -585,7 +599,7 @@ void HttpServer::run(const std::stop_token& stop) {
     if (listen_fd_ < 0) {
         return;
     }
-    while (!stop.stop_requested() && g_stop == 0) {
+    while (!stop.stop_requested() && !g_stop.load(std::memory_order_relaxed)) {
         pollfd pfds[kMaxConnections + 1];
         nfds_t nfds = 0;
         pfds[nfds].fd = listen_fd_;
@@ -608,10 +622,13 @@ void HttpServer::run(const std::stop_token& stop) {
             }
             return;  // unrecoverable poll error: stop the loop
         }
-        if (g_stop != 0 || stop.stop_requested()) {
+        if (g_stop.load(std::memory_order_relaxed) || stop.stop_requested()) {
             break;
         }
         apply_timeouts();
+        if (tick_hook_ != nullptr) {
+            tick_hook_(tick_hook_context_);
+        }
         if (pfds[0].revents & POLLIN) {
             accept_pending();
         }

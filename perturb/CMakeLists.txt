@@ -4,6 +4,9 @@ add_library(safety_crit_perturb STATIC
 )
 add_library(safety_crit::perturb ALIAS safety_crit_perturb)
 
+# T-0038 (DEC-0014 §3): consolidated event-log append on action.
+target_link_libraries(safety_crit_perturb PUBLIC safety_crit::observability)
+
 target_include_directories(safety_crit_perturb
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )

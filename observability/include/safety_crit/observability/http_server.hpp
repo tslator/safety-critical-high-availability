@@ -75,6 +75,13 @@ struct HttpResponse {
 // the server thread only.
 using RouteHandler = bool (*)(void* context, HttpResponse& response);
 
+// Optional periodic hook (T-0038, daemon polling loop): invoked on the
+// server thread once per completed poll() loop iteration (100 ms tick
+// granularity) after timeouts are applied. Must return promptly; call
+// request_stop() from within to end run(). Setting is single-threaded like
+// everything else on this class.
+using TickHook = void (*)(void* context);
+
 struct HttpServerConfig {
     // "HOST:PORT" with numeric IPv4 HOST (validated by configure()).
     std::string listen_address{kDefaultListenAddress};
@@ -119,6 +126,9 @@ public:
     // beyond connections still open; call close() afterwards).
     void run(const std::stop_token& stop);
 
+    // Installs/clears the periodic tick hook (see TickHook above).
+    void set_tick_hook(TickHook hook, void* context);
+
     // Closes the listening socket and all connections (idempotent).
     void close();
 
@@ -131,6 +141,8 @@ public:
     static void install_signal_handlers();
     static void request_stop();
     static void reset_stop();
+    // True once stop has been requested (signal or request_stop()).
+    static bool stop_requested();
 
 private:
     struct Connection;  // fixed-buffer per-connection state (defined in .cpp)
@@ -150,6 +162,8 @@ private:
                        bool keep_alive);
     bool send_simple(Connection& conn, int status, bool keep_alive);
 
+    TickHook tick_hook_ = nullptr;
+    void* tick_hook_context_ = nullptr;
     HttpServerConfig config_{};
     std::vector<Route> routes_{};  // bounded by kMaxRoutes at registration
     int listen_fd_{-1};

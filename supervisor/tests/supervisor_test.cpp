@@ -562,6 +562,35 @@ SAFETY_CRIT_TEST_CASE(Supervisor, WitnessCountsCorruptionSkipsAcrossSequence) {
     SAFETY_CRIT_ASSERT(witness.next_sequence == 3u);
 }
 
+SAFETY_CRIT_TEST_CASE(Supervisor, DrainGapSetsGapLostForDataLossEvent) {
+    // T-0042 (DEC-0014 §8): a sequence gap observed mid-drain fails the
+    // drain and reports the dropped-record count so the caller can emit
+    // the data_loss_observed witness (feeds data_loss_events_total).
+    safety_crit::shared_memory::SharedRegion region{};
+    SAFETY_CRIT_ASSERT(safety_crit::shared_memory::initialize(region));
+    safety_crit::workers::ProcessedData record{};
+    record.worker_idx = 0u;
+    for (std::uint64_t tick = 4u; tick < 7u; ++tick) {
+        record.tick = tick;
+        SAFETY_CRIT_ASSERT(safety_crit::shared_memory::push(region, 0u, record));
+    }
+    safety_crit::supervisor::OutputWitness witness;
+    SAFETY_CRIT_ASSERT(safety_crit::supervisor::drain_output_witness(region, 0u, witness));
+    SAFETY_CRIT_ASSERT(witness.records == 3u);
+    SAFETY_CRIT_ASSERT(witness.gap_lost == 0u);
+
+    // Two more records, one consumed out-of-band (simulated lost drain).
+    record.tick = 7u;
+    SAFETY_CRIT_ASSERT(safety_crit::shared_memory::push(region, 0u, record));
+    record.tick = 8u;
+    SAFETY_CRIT_ASSERT(safety_crit::shared_memory::push(region, 0u, record));
+    safety_crit::workers::ProcessedData stolen{};
+    SAFETY_CRIT_ASSERT(region.rings[0].try_pop(stolen));
+
+    SAFETY_CRIT_ASSERT(!safety_crit::supervisor::drain_output_witness(region, 0u, witness));
+    SAFETY_CRIT_ASSERT(witness.gap_lost == 1u);
+}
+
 SAFETY_CRIT_TEST_CASE(Supervisor, LaunchesAndReapsTopology) {
     const std::string region_name = "/sc_t0017_" + std::to_string(static_cast<long>(::getpid()));
     const auto pid_dir = std::filesystem::temp_directory_path() /
@@ -830,6 +859,8 @@ SAFETY_CRIT_TEST_CASE(Supervisor, WitnessFieldBuildersPinVocabulary) {
                        "\"ring\":1,\"reason\":\"standby_exhausted\"");
     SAFETY_CRIT_ASSERT(stall_recovered_fields(2, 9) == "\"worker\":2,\"epoch\":9");
     SAFETY_CRIT_ASSERT(stall_escalated_fields(2, 9) == "\"worker\":2,\"epoch\":9");
+    SAFETY_CRIT_ASSERT(data_loss_observed_fields(0, 5) == "\"ring\":0,\"lost\":5");
+    SAFETY_CRIT_ASSERT(data_loss_observed_fields(1, 1) == "\"ring\":1,\"lost\":1");
     SAFETY_CRIT_ASSERT(
         shutdown_summary_fields(6, 100, 2, true, 50, 0, false, true) ==
         "\"state\":6,\"a_records\":100,\"a_corruptions\":2,\"a_first_post_failover\":1,"

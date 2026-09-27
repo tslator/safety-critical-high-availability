@@ -81,4 +81,35 @@ log "verifying shared region ${REGION} survived the failover"
 docker compose exec -T "$SERVICE" test -e "/dev/shm${REGION}" \
   || fail "shared region ${REGION} disappeared after failover"
 
+# T-0021/T-0038/T-0042: the observability daemon shares the supervisor's
+# IPC namespace; after recovery its /health must report ok and /metrics
+# must expose the worker and data-loss series.
+DAEMON_SERVICE="${DAEMON_SERVICE:-observability}"
+DAEMON_URL="${DAEMON_URL:-http://127.0.0.1:8080}"
+
+daemon_curl() {
+  docker compose exec -T "$DAEMON_SERVICE" curl -fsS -m 2 "${DAEMON_URL}$1" 2>/dev/null || true
+}
+
+log "waiting for observability daemon ${DAEMON_SERVICE} to report /health ok"
+health=""
+for _ in $(seq 1 30); do
+  health="$(daemon_curl /health)"
+  [[ "$health" == *'"status":"ok"'* ]] && break
+  sleep 1
+done
+[[ "$health" == *'"status":"ok"'* ]] \
+  || fail "daemon /health never reported ok after failover (last=${health:-<empty>})"
+
+log "verifying daemon /health exposes data_loss_events_total"
+echo "$health" | grep -q '"data_loss_events_total":' \
+  || fail "daemon /health omits data_loss_events_total: $health"
+
+log "verifying daemon /metrics exposes worker_status and data_loss_events_total"
+metrics="$(daemon_curl /metrics)"
+echo "$metrics" | grep -q '^worker_status' \
+  || fail "daemon /metrics omits worker_status series"
+echo "$metrics" | grep -q '^data_loss_events_total ' \
+  || fail "daemon /metrics omits data_loss_events_total series"
+
 log "failover smoke PASSED"
