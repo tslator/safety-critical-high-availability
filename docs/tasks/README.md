@@ -50,7 +50,7 @@ sequential `T-####`; phase-scoped labels such as `T1.3` are aliases. See
 | [T-0042](T-0042-event-metrics-collector.md) | Phase 6 | Event-log metrics collector | AI agent (opencode) | Complete | High | T-0033, T-0040 | [DEC-0014](../decisions/0014-phase6-observability-logging.md), [evidence](../evidence/phase-6.md) |
 | [T-0037](T-0037-health-status-endpoints.md) | Phase 6 | Health report and status endpoints | AI agent (opencode) | Complete | High | T-0035, T-0036 | [DEC-0014](../decisions/0014-phase6-observability-logging.md), [evidence](../evidence/phase-6.md) |
 | [T-0038](T-0038-observability-cli-compose.md) | Phase 6 | Observability CLI subcommand and Compose service | AI agent (opencode) | Complete | High | T-0034, T-0036, T-0037 | [DEC-0014](../decisions/0014-phase6-observability-logging.md) |
-| [T-0039](T-0039-phase6-integration-exit.md) | Phase 6 | Integration, evidence, and phase exit | Unassigned | Planned | High | T-0033, T-0034, T-0035, T-0036, T-0037, T-0038 | [DEC-0014](../decisions/0014-phase6-observability-logging.md) |
+| [T-0039](T-0039-phase6-integration-exit.md) | Phase 6 | Integration, evidence, and phase exit | AI agent (opencode) | Complete | High | T-0033, T-0034, T-0035, T-0036, T-0037, T-0038 | [DEC-0014](../decisions/0014-phase6-observability-logging.md) |
 | T1.1 | Phase 1 | Shared region layout and atomic flags _(roll-up)_ | — | Complete | — | — | [Phase 1 plan](../phases/PHASE_1_SHARED_MEMORY.md) |
 | T1.2 | Phase 1 | Lock-free ring buffer _(roll-up)_ | — | Complete | — | — | [Phase 1 plan](../phases/PHASE_1_SHARED_MEMORY.md), [evidence](../evidence/phase-1.md) |
 | Phase 0 | Phase 0 | Container and tooling (0.1–0.6) _(roll-up)_ | — | Complete | — | — | [Phase 0 plan](../phases/PHASE_0_CONTAINER_AND_TOOLING.md) |

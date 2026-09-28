@@ -92,7 +92,9 @@ services:
     mem_limit: 256m
     restart: unless-stopped
     ports:
-      - "${OBSERVABILITY_PORT:-8080}:8080"
+      # G6.5: publish on loopback only; the daemon is an operator surface,
+      # never a network-facing service.
+      - "127.0.0.1:${OBSERVABILITY_PORT:-8080}:8080"
     networks: [safety-ha]
     healthcheck:
       # /health is 200 while the region is attached, identity verifies, and

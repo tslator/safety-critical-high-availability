@@ -436,3 +436,62 @@ evidence here or in `NOTES.md`.
 - No shared-memory code touched: `git status` shows zero changes under
   `shared-memory/`; region layout untouched (v4).
 - Hosted CI: pending (recorded at phase integration if not per task).
+
+## T-0039 Result (Phase 6 exit gate) (2026-09-28)
+
+Integration pass over T-0033–T-0038 (incl. T-0040–T-0042) against gates
+G6.1–G6.5 and the Phase 6 Exit line of the
+[plan](../phases/PHASE_6_OBSERVABILITY.md). The dedicated CI runner is the
+reproducible reference host for the bounded-recovery observation (precedent:
+Phase 5 G5.4 decision).
+
+- **G6.1 — event log library green**: `EventLog` suite green in GoogleTest
+  and Catch2 and under ASan+UBSan and TSan (all four sanitizer legs below);
+  injected-gap detection, fork-based concurrent-writer atomicity, restart
+  seq recovery, and fsync policy pinned by the T-0033 tests throughout.
+- **G6.2 — logging migration green**: supervisor/worker JSON wire-contract
+  format tests green in both frameworks; `docker-compose-smoke` and
+  S1/S2/S3/S5/S6/S1-R green against the migrated format (hosted run +
+  local sweep below); replay determinism preserved (S1-R PASS).
+- **G6.3 — HTTP server bounded**: malformed-request/timeout/connection-cap
+  and fd-leak tests green; TSan clean with socket tests active in both
+  frameworks (the T-0038 `g_stop` atomic fix removed the last reported
+  race).
+- **G6.4 — metrics correctness**: `data_loss_events_total == 0` captured
+  from the live daemon at the end of **every** local scenario run (S1, S2,
+  S3, S5, S6 all PASS); `event_log_gaps_total{component=...}` 0 for all
+  components in every run (independently sourced from reader continuity,
+  never from data loss); `failover_duration_seconds` observed via the
+  S1 scenario budget assertion — 22 ms local (budget <100 ms), CI green
+  5/5 consecutive runs per scenario (same budget enforced under `bash -e`).
+- **G6.5 — Compose**: `observability` service healthy; supervisor
+  healthcheck command unchanged (the T-0038 diff adds `ipc: shareable` and
+  the `ha-runtime` volume only); daemon port now published on **loopback
+  only** (`127.0.0.1:${OBSERVABILITY_PORT:-8080}:8080`, verified via
+  `docker port` → `127.0.0.1:18080`); metrics/health smoke (extended
+  `failover-smoke.sh`: daemon `/health` ok, `data_loss_events_total` in
+  health JSON, `worker_status` + `data_loss_events_total` in `/metrics`)
+  green **5× consecutively** locally (5/5); S6 asserts the daemon keeps
+  serving during supervisor loss (HTTP 200, container never restarts) and
+  `/health` returns ok after the policy rebuild (re-attach path,
+  `daemon.cpp` `probe_region`).
+- **Local verification matrix (this host, 2026-09-28)**: GoogleTest
+  217/217; Catch2 217/217; ASan+UBSan (GoogleTest) 195/195 and (Catch2)
+  195/195, zero reports; TSan (GoogleTest) 195/195 and (Catch2) 195/195
+  under `setarch --addr-no-randomize`, zero races; clang-verify (pinned
+  clang-14 container) 217/217; `docker build --pull` + `--version` PASS;
+  both compose configs validate; scenario sweep S1 (22 ms)/S2/S3/S5/S6 +
+  S1-R all PASS with the daemon counters above.
+- **Zero shared-memory changes for the whole phase**:
+  `git diff 0def7b8..HEAD -- shared-memory/` is empty (0 lines) at the exit
+  commit; region layout stays v4 (DEC-0014 #11).
+- **Phase 6 Exit** — hosted CI
+  [run 36422705547](https://github.com/tslator/safety-critical-high-availability/actions/runs/36422705547)
+  on commit `0cd4afb` (2026-09-28): all ten jobs green — GoogleTest
+  217/217, Catch2 217/217, ASan+UBSan ×2 195/195, TSan ×2 195/195,
+  clang-verify 217/217, Docker build, AI-guidance drift check, and the
+  Compose job (base failover smoke + S1/S2/S3/S5/S6 ×5 fresh-stack each +
+  S1 deterministic replay). The exit commit adds only this evidence, the
+  status updates, the loopback port binding, and the S6 daemon-serving
+  assertions; the follow-up run on the exit commit is recorded below when
+  green.
