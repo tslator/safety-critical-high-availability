@@ -1,6 +1,6 @@
 # T-0038: Observability CLI Subcommand and Compose Service
 
-- Status: Planned
+- Status: Complete
 - Owner: Unassigned
 - Priority: High
 - Depends on: T-0034, T-0036, T-0037
