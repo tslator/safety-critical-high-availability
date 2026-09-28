@@ -491,7 +491,9 @@ Phase 5 G5.4 decision).
   217/217, Catch2 217/217, ASan+UBSan ×2 195/195, TSan ×2 195/195,
   clang-verify 217/217, Docker build, AI-guidance drift check, and the
   Compose job (base failover smoke + S1/S2/S3/S5/S6 ×5 fresh-stack each +
-  S1 deterministic replay). The exit commit adds only this evidence, the
-  status updates, the loopback port binding, and the S6 daemon-serving
-  assertions; the follow-up run on the exit commit is recorded below when
-  green.
+  S1 deterministic replay). The exit commit (`468e2c9`) adds the loopback
+  port binding, the S6 daemon-serving assertions, and this evidence; its
+  own hosted run
+  [36446476791](https://github.com/tslator/safety-critical-high-availability/actions/runs/36446476791)
+  (2026-09-28) is green across all ten jobs, scenarios 5× each included —
+  Phase 6 exit gate evidence. **Phase 6 is closed.**
