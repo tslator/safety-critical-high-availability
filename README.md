@@ -1,15 +1,57 @@
 # Safety-Critical High Availability
 
+## Why This Project Exists
+
+I recently interviewed for a position supporting a safety-critical,
+high-availability product: receive data in real time, transform it into a
+video stream, and display it in a UI with overlays. Being safety-critical
+meant it had to always show the most up-to-date content; being
+high-availability meant the display could never be lost.
+
+I have worked in software (embedded, desktop, safety-critical) for over 30
+years, but never in such an environment. In the interview I covered hardware
+and software redundancy, best practices, software quality, and testing. Days
+later I was still thinking about the problem space and continued the
+exploration in a chat with an AI assistant. After several hours, the goal
+crystallized:
+
+> Build a demonstrable safety-critical HA application inside a Docker
+> container that exercises monitors, supervisors, shared memory, lock-free
+> buffering, atomic synchronization, and perturbation injection to prove
+> recoverability.
+
+It took about 40 days to complete, keeping the process moving forward by
+monitoring and prompting. Local inferencing is significantly slower than
+hosted subscriptions, but time was less of a concern here.
+
+**Disclaimer:** I guided, suggesting architecture and design and steering the development, but did not write, any of the code in this project.
+The `docs/ai-guidance/` folder contains the guidelines I tried to specify in
+an AI-harness-agnostic way. I don't claim anything special or novel — I was
+just trying to keep the AI upright and moving forward.
+
+Tools used:
+
+- AMD Ryzen AI Halo
+- ai-toolbox-cockpit (v2026.9.18.915), image
+  `docker.io/kyuz0/amd-strix-halo-toolboxes:rocm-10.0-qwen-3.8-flash-next`
+- Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS
+- OpenCode (v1.18.33)
+- VS Code (v1.139.0)
+
 ## Current Status
 
-Phase 0 is complete. Phase 1 is complete: the shared-memory layout, atomic
+- Phase 0 is complete. 
+- Phase 1 is complete: the shared-memory layout, atomic
 worker flags, lock-free ring buffer, CRC-32C integrity, named shared-memory
 attach, and 1M-op MPMC stress verification are implemented and covered by the
-test, sanitizer, and clang-verify matrices. Phase 2 is complete: worker
+test, sanitizer, and clang-verify matrices. 
+- Phase 2 is complete: worker
 processes with deterministic workloads, deadline monitoring, clean shutdown,
-and a forced-crash hook. Phase 3 is complete: the monitor daemon observes
+and a forced-crash hook. 
+- Phase 3 is complete: the monitor daemon observes
 worker status cells and pidfile liveness and publishes crash/stall/recovery
-detections as structured JSON lines. Phase 4 is complete: the supervisor owns
+detections as structured JSON lines. 
+- Phase 4 is complete: the supervisor owns
 the monitor + hot A/B + standby C topology, transfers logical A to C after a
 crash and restarts A as standby with sub-100 ms fault-to-first-output timing,
 and the real Compose stack runs that topology end-to-end with an in-container
