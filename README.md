@@ -24,6 +24,14 @@ behind distributed work. [AI agent guidance](docs/ai-guidance/README.md) is
 authored under `docs/ai-guidance/`; `AGENTS.md` and
 `.github/copilot-instructions.md` are generated from it.
 
+## Manual
+
+Want to understand how this system works rather than just run it?
+[**docs/manual/**](docs/manual/README.md) is a guided, hands-on tour — 14
+chapters plus appendices — covering the lock-free ring buffer, ownership
+failover, fault injection, observability, and the verification story. Every
+"Try it" block has been run against this codebase and quotes real output.
+
 ## Bootstrap
 
 This project provides a C++20 CMake build, shared-memory library, worker and
