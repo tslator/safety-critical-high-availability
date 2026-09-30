@@ -55,7 +55,17 @@ detections as structured JSON lines.
 the monitor + hot A/B + standby C topology, transfers logical A to C after a
 crash and restarts A as standby with sub-100 ms fault-to-first-output timing,
 and the real Compose stack runs that topology end-to-end with an in-container
-failover smoke. Fault injection and stall recovery are Phase 5 scope.
+failover smoke. 
+- Phase 5 is complete: the perturbation engine (`perturb` subcommand and
+profile-gated service) exercises crash, stall, corruption, and double-fault
+scenarios with replay determinism; S1/S2/S3/S5/S6 are green 5x each and
+crash recovery stays within the 100 ms budget. 
+- Phase 6 is complete: a read-only `observability` daemon provides a
+sequenced append-only event log, Prometheus metrics, and `/health`,
+`/metrics`, and `/status` endpoints; supervisor and worker logging migrated
+to structured JSON events.
+
+Phases 0-6 are complete; no further phases are planned.
 
 See [project status](docs/STATUS.md) for the current phase table and next
 tasks. The [architecture](docs/ARCHITECTURE.md), [development guide](docs/DEVELOPMENT.md),
@@ -76,10 +86,9 @@ failover, fault injection, observability, and the verification story. Every
 
 ## Bootstrap
 
-This project provides a C++20 CMake build, shared-memory library, worker and
-monitor runtimes, a supervisor with crash failover, smoke tests, and a
-containerized Compose runtime baseline. Fault injection (Phase 5) and the
-Phase 4 exit gate (T-0022) remain planned.
+This project provides a C++20 CMake build, shared-memory library, worker,
+monitor, supervisor, observability, and perturbation runtimes, smoke tests,
+and a containerized Compose runtime baseline. Phases 0-6 are complete.
 
 ### Host Requirements
 

@@ -21,14 +21,14 @@ requirement as binding for any new code that touches the relevant path.
 4. **No undefined behavior in hot-path/lock-free code.** Gate: `sanitizers`
    CI job, `ASan+UBSan` matrix leg.
 5. **Bounded recovery time.** Time from fault injection to full recovery
-   must stay under the project SLA. Gate: planned perturbation/fault
-   injection suite (Phase 5, not yet implemented).
+   must stay under the project SLA. Gate: perturbation scenario suite
+   (S1/S2/S3/S5/S6, S1 replay) in the `docker-compose-smoke` CI job.
 6. **No priority inversion.** Scheduling priority order is monitor <
-   supervisor < workers. Gate: planned supervisor/worker scheduling tests
-   (Phase 3/4, not yet implemented).
+   supervisor < workers. Gate: supervisor scheduling-policy tests in the
+   `native-gtest` and `native-catch2` CI jobs.
 7. **Graceful degradation.** With N/2 workers down, the system continues at
-   reduced throughput rather than failing totally. Gate: planned
-   perturbation scenario suite (Phase 5, not yet implemented).
+   reduced throughput rather than failing totally. Gate: perturbation
+   scenario suite (S5 double-fault) in the `docker-compose-smoke` CI job.
 
 Container/runtime baseline: the demo entrypoint and Compose stack must keep
 running. Gate: `docker-build` and `docker-compose-smoke` CI jobs.
